@@ -24,6 +24,7 @@ import {
 // KONFIGURACJA WARSTWY KOMUNIKACJI HTTP/JSON
 // ==========================================
 import { API_BASE_URL } from '../api';
+import RecipeFormModal, { type RecipeFormInitial } from '../components/RecipeFormModal';
 
 export interface RecipeIngredient {
   name: string;
@@ -51,18 +52,6 @@ export interface Recipe {
   instructions: string[];
 }
 
-interface RecipeFormState {
-  title: string;
-  description: string;
-  prepTime: number;
-  servings: number;
-  kcalPerServing: number;
-  dietTags: string[];
-  allergens: string[];
-  requiredEquipmentInput: string;
-  ingredients: RecipeIngredient[];
-  instructions: string[];
-}
 
 const AVAILABLE_DIETS = ['Bezmięsne (Wege)', 'Wegańskie', 'Bez glutenu', 'Bez laktozy', 'Keto'];
 const AVAILABLE_ALLERGENS = ['Gluten', 'Laktoza', 'Orzechy', 'Jajka', 'Soja'];
@@ -86,21 +75,10 @@ export default function RecipesPage() {
   const [scaledServings, setScaledServings] = useState<number>(2);
   const [isCooking, setIsCooking] = useState<boolean>(false);
 
-  // Stany formularza dodawania / edycji przepisu
+  // Stany formularza dodawania / edycji przepisu (komponent RecipeFormModal)
   const [isFormOpen, setIsFormOpen] = useState<boolean>(false);
-  const [editingRecipe, setEditingRecipe] = useState<Recipe | null>(null);
-  const [formData, setFormData] = useState<RecipeFormState>({
-    title: '',
-    description: '',
-    prepTime: 30,
-    servings: 2,
-    kcalPerServing: 0,
-    dietTags: [],
-    allergens: [],
-    requiredEquipmentInput: '',
-    ingredients: [{ name: '', amount: 100, unit: 'g', kcalPer100g: 0 }],
-    instructions: ['']
-  });
+  const [formInitial, setFormInitial] = useState<RecipeFormInitial | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   // Pobieranie przepisów z backendu Node.js
   const loadRecipes = useCallback(async () => {
@@ -139,9 +117,17 @@ export default function RecipesPage() {
     // Obsługa parametru URL ?akcja=nowy (np. po kliknięciu z HomePage)
     const params = new URLSearchParams(window.location.search);
     if (params.get('akcja') === 'nowy') {
-      openFormModal();
+      setFormInitial(null);
+      setIsFormOpen(true);
     }
   }, [loadRecipes]);
+
+  // Komunikat o powodzeniu znika po kilku sekundach
+  useEffect(() => {
+    if (!notice) return;
+    const t = window.setTimeout(() => setNotice(null), 3000);
+    return () => window.clearTimeout(t);
+  }, [notice]);
 
   // Otwieranie szczegółów przepisu z inicjalizacją domyślnej liczby porcji
   const openRecipeDetails = (recipe: Recipe) => {
@@ -221,104 +207,19 @@ export default function RecipesPage() {
   // Otwieranie formularza dodawania / edycji przepisu
   const openFormModal = (recipe?: Recipe, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
-    if (recipe) {
-      setEditingRecipe(recipe);
-      setFormData({
-        title: recipe.title,
-        description: recipe.description || '',
-        prepTime: recipe.prepTime || 30,
-        servings: recipe.servings || 2,
-        kcalPerServing: recipe.kcalPerServing || 0,
-        dietTags: recipe.dietTags || [],
-        allergens: recipe.allergens || [],
-        requiredEquipmentInput: (recipe.requiredEquipment || []).join(', '),
-        ingredients:
-          recipe.ingredients && recipe.ingredients.length > 0
-            ? recipe.ingredients
-            : [{ name: '', amount: 100, unit: 'g', kcalPer100g: 0 }],
-        instructions:
-          recipe.instructions && recipe.instructions.length > 0
-            ? recipe.instructions
-            : ['']
-      });
-    } else {
-      setEditingRecipe(null);
-      setFormData({
-        title: '',
-        description: '',
-        prepTime: 30,
-        servings: 2,
-        kcalPerServing: 0,
-        dietTags: [],
-        allergens: [],
-        requiredEquipmentInput: '',
-        ingredients: [{ name: '', amount: 100, unit: 'g', kcalPer100g: 0 }],
-        instructions: ['']
-      });
-    }
+    setFormInitial(
+      recipe
+        ? {
+            id: recipe.id,
+            nazwa: recipe.title,
+            czas: recipe.prepTime,
+            porcja: recipe.servings,
+            kalorycznosc: recipe.kcalPerServing ?? null,
+            opis: recipe.description ?? null
+          }
+        : null
+    );
     setIsFormOpen(true);
-  };
-
-  // Zapis nowego lub edytowanego przepisu do bazy danych
-  const handleSaveRecipe = async (e: React.FormEvent) => {
-    e.preventDefault();
-
-    const cleanedIngredients = formData.ingredients.filter((i) => i.name.trim() !== '');
-    const cleanedInstructions = formData.instructions.filter((s) => s.trim() !== '');
-
-    if (cleanedIngredients.length === 0 || cleanedInstructions.length === 0) {
-      alert('Dodaj przynajmniej jeden składnik oraz jeden krok instrukcji.');
-      return;
-    }
-
-    // Automatyczne wyliczenie kalorii na porcję z podanych składników (jeśli wpisano kcal/100g)
-    const calculatedTotalKcal = cleanedIngredients.reduce((acc, ing) => {
-      if (!ing.kcalPer100g) return acc;
-      const multiplier = ing.unit === 'kg' || ing.unit === 'l' ? (ing.amount * 1000) / 100 : ing.amount / 100;
-      return acc + ing.kcalPer100g * multiplier;
-    }, 0);
-
-    const finalKcalPerServing =
-      formData.kcalPerServing > 0
-        ? formData.kcalPerServing
-        : Math.round(calculatedTotalKcal / (formData.servings || 1));
-
-    const payload = {
-      title: formData.title,
-      description: formData.description,
-      prepTime: formData.prepTime,
-      servings: formData.servings,
-      kcalPerServing: finalKcalPerServing,
-      dietTags: formData.dietTags,
-      allergens: formData.allergens,
-      requiredEquipment: formData.requiredEquipmentInput
-        .split(',')
-        .map((s) => s.trim())
-        .filter(Boolean),
-      ingredients: cleanedIngredients,
-      instructions: cleanedInstructions
-    };
-
-    const isEditing = Boolean(editingRecipe);
-    const url = isEditing
-      ? `${API_BASE_URL}/recipes/${editingRecipe?.id}`
-      : `${API_BASE_URL}/recipes`;
-    const method = isEditing ? 'PUT' : 'POST';
-
-    try {
-      const response = await fetch(url, {
-        method,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-
-      if (!response.ok) throw new Error('Błąd zapisu przepisu');
-
-      setIsFormOpen(false);
-      await loadRecipes();
-    } catch {
-      alert('Nie udało się zapisać przepisu w bazie danych.');
-    }
   };
 
   // Pomocnicze funkcje przełączania filtrów
@@ -403,6 +304,13 @@ export default function RecipesPage() {
           </button>
         </div>
       </header>
+
+      {notice && (
+        <div role="status" className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-sm text-emerald-300 flex items-center gap-2">
+          <CheckCircle2 className="w-4 h-4" />
+          {notice}
+        </div>
+      )}
 
       {/* Komunikat o braku połączenia z backendem REST API */}
       {!dbConnected && errorMessage && (
@@ -845,266 +753,17 @@ export default function RecipesPage() {
         </div>
       )}
 
-      {/* ========================================================= */}
-      {/* MODAL DODAWANIA I EDYTOWANIA PRZEPISU DO BAZY DANYCH       */}
-      {/* ========================================================= */}
+      {/* Formularz dodawania / edycji przepisu (SCRUM-41) */}
       {isFormOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto shadow-2xl p-6">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-4 mb-5">
-              <h3 className="text-lg font-bold text-white">
-                {editingRecipe ? 'Edytuj przepis' : 'Dodaj nowy przepis'}
-              </h3>
-              <button
-                onClick={() => setIsFormOpen(false)}
-                className="text-slate-400 hover:text-white"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <form onSubmit={handleSaveRecipe} className="space-y-5">
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium text-slate-400">Nazwa przepisu</label>
-                <input
-                  type="text"
-                  required
-                  value={formData.title}
-                  onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-                  placeholder="np. Makaron ze szpinakiem i suszonymi pomidorami"
-                  className="w-full px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-800 text-sm text-white focus:border-emerald-500 focus:outline-none"
-                />
-              </div>
-
-              <div className="grid grid-cols-3 gap-4">
-                <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-slate-400">Czas (min)</label>
-                  <input
-                    type="number"
-                    required
-                    min="1"
-                    value={formData.prepTime}
-                    onChange={(e) =>
-                      setFormData({ ...formData, prepTime: Number(e.target.value) })
-                    }
-                    className="w-full px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-800 text-sm text-white focus:border-emerald-500 focus:outline-none"
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-slate-400">Liczba porcji</label>
-                  <input
-                    type="number"
-                    required
-                    min="1"
-                    value={formData.servings}
-                    onChange={(e) =>
-                      setFormData({ ...formData, servings: Number(e.target.value) })
-                    }
-                    className="w-full px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-800 text-sm text-white focus:border-emerald-500 focus:outline-none"
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-slate-400">
-                    Kcal / porcja (opcjonalnie)
-                  </label>
-                  <input
-                    type="number"
-                    min="0"
-                    value={formData.kcalPerServing || ''}
-                    onChange={(e) =>
-                      setFormData({ ...formData, kcalPerServing: Number(e.target.value) })
-                    }
-                    placeholder="Wyliczane automatycznie"
-                    className="w-full px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-800 text-sm text-white focus:border-emerald-500 focus:outline-none"
-                  />
-                </div>
-              </div>
-
-              {/* Składniki przepisu */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-medium text-slate-400">
-                    Lista składników
-                  </label>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setFormData({
-                        ...formData,
-                        ingredients: [
-                          ...formData.ingredients,
-                          { name: '', amount: 100, unit: 'g', kcalPer100g: 0 }
-                        ]
-                      })
-                    }
-                    className="text-xs text-emerald-400 hover:text-emerald-300 font-medium"
-                  >
-                    + Dodaj składnik
-                  </button>
-                </div>
-
-                <div className="space-y-2">
-                  {formData.ingredients.map((ing, idx) => (
-                    <div key={idx} className="grid grid-cols-12 gap-2 items-center">
-                      <input
-                        type="text"
-                        required
-                        placeholder="Nazwa składnika"
-                        value={ing.name}
-                        onChange={(e) => {
-                          const updated = [...formData.ingredients];
-                          updated[idx].name = e.target.value;
-                          setFormData({ ...formData, ingredients: updated });
-                        }}
-                        className="col-span-5 px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white"
-                      />
-                      <input
-                        type="number"
-                        required
-                        min="0.1"
-                        step="0.1"
-                        placeholder="Ilość"
-                        value={ing.amount}
-                        onChange={(e) => {
-                          const updated = [...formData.ingredients];
-                          updated[idx].amount = Number(e.target.value);
-                          setFormData({ ...formData, ingredients: updated });
-                        }}
-                        className="col-span-2 px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white"
-                      />
-                      <select
-                        value={ing.unit}
-                        onChange={(e) => {
-                          const updated = [...formData.ingredients];
-                          updated[idx].unit = e.target.value;
-                          setFormData({ ...formData, ingredients: updated });
-                        }}
-                        className="col-span-2 px-2 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white"
-                      >
-                        <option value="g">g</option>
-                        <option value="ml">ml</option>
-                        <option value="szt">szt</option>
-                        <option value="kg">kg</option>
-                        <option value="l">l</option>
-                      </select>
-                      <input
-                        type="number"
-                        min="0"
-                        placeholder="kcal/100g"
-                        value={ing.kcalPer100g || ''}
-                        onChange={(e) => {
-                          const updated = [...formData.ingredients];
-                          updated[idx].kcalPer100g = Number(e.target.value);
-                          setFormData({ ...formData, ingredients: updated });
-                        }}
-                        className="col-span-2 px-2 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (formData.ingredients.length === 1) return;
-                          setFormData({
-                            ...formData,
-                            ingredients: formData.ingredients.filter((_, i) => i !== idx)
-                          });
-                        }}
-                        className="col-span-1 text-slate-500 hover:text-rose-400 flex justify-center"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Instrukcje krok po kroku */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-medium text-slate-400">
-                    Kroki przygotowania
-                  </label>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setFormData({
-                        ...formData,
-                        instructions: [...formData.instructions, '']
-                      })
-                    }
-                    className="text-xs text-emerald-400 hover:text-emerald-300 font-medium"
-                  >
-                    + Dodaj krok
-                  </button>
-                </div>
-
-                <div className="space-y-2">
-                  {formData.instructions.map((step, idx) => (
-                    <div key={idx} className="flex gap-2 items-center">
-                      <span className="text-xs text-slate-500 w-5">{idx + 1}.</span>
-                      <input
-                        type="text"
-                        required
-                        placeholder={`Opisz krok ${idx + 1}...`}
-                        value={step}
-                        onChange={(e) => {
-                          const updated = [...formData.instructions];
-                          updated[idx] = e.target.value;
-                          setFormData({ ...formData, instructions: updated });
-                        }}
-                        className="flex-1 px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (formData.instructions.length === 1) return;
-                          setFormData({
-                            ...formData,
-                            instructions: formData.instructions.filter((_, i) => i !== idx)
-                          });
-                        }}
-                        className="text-slate-500 hover:text-rose-400 p-1"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Wymagany sprzęt kuchenny */}
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium text-slate-400">
-                  Wymagane wyposażenie (oddzielone przecinkami)
-                </label>
-                <input
-                  type="text"
-                  value={formData.requiredEquipmentInput}
-                  onChange={(e) =>
-                    setFormData({ ...formData, requiredEquipmentInput: e.target.value })
-                  }
-                  placeholder="np. Piekarnik, Blender, Patelnia"
-                  className="w-full px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white"
-                />
-              </div>
-
-              <div className="pt-4 border-t border-slate-800 flex justify-end gap-3">
-                <button
-                  type="button"
-                  onClick={() => setIsFormOpen(false)}
-                  className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-medium text-white transition"
-                >
-                  Anuluj
-                </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-xs font-semibold text-slate-950 transition"
-                >
-                  Zapisz przepis w bazie
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+        <RecipeFormModal
+          initial={formInitial}
+          onClose={() => setIsFormOpen(false)}
+          onSaved={(message) => {
+            setIsFormOpen(false);
+            setNotice(message);
+            loadRecipes();
+          }}
+        />
       )}
     </main>
   );

@@ -14,6 +14,7 @@ import {
   FlaskConical
 } from 'lucide-react';
 import { apiFetch, ApiError } from '../api';
+import { UNITS, isValidUnit } from '../constants';
 
 // ==========================================
 // MODEL DANYCH SPIŻARNI
@@ -21,15 +22,6 @@ import { apiFetch, ApiError } from '../api';
 // Backend (GET /api/spizarnia) zwraca wiersze z tabeli spizarnia + nazwę ze skladniki:
 // { id, nazwa, ilosc, jednostka, data_waznosci, kalorie }.
 // Zapis: POST /api/spizarnia, PUT /api/spizarnia/:id, DELETE /api/spizarnia/:id (SCRUM-38).
-
-/** Jednostki zgodne z typem unit_meas_enum w bazie PostgreSQL. */
-const UNITS = [
-  { value: 'szt', label: 'szt.' },
-  { value: 'g', label: 'g' },
-  { value: 'kg', label: 'kg' },
-  { value: 'l', label: 'l' },
-  { value: 'opak.', label: 'opak.' }
-] as const;
 
 /** Ile dni przed końcem daty ważności produkt dostaje ostrzeżenie. */
 const SHORT_DATE_DAYS = 3;
@@ -165,7 +157,7 @@ const validate = (form: FormState): FormErrors => {
     errors.quantity = 'Ilość jest za duża.';
   }
 
-  if (!UNITS.some((u) => u.value === form.unit)) errors.unit = 'Wybierz jednostkę.';
+  if (!isValidUnit(form.unit)) errors.unit = 'Wybierz jednostkę.';
 
   if (form.kcal.trim() !== '') {
     const kcal = Number(form.kcal.replace(',', '.'));
