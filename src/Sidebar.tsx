@@ -9,42 +9,58 @@ import {
   Camera,
   Database
 } from 'lucide-react';
+import { apiFetch } from './api';
 
-const API_BASE_URL = 'http://localhost:5000/api';
+type Stats = {
+  pantry: number | null;
+  recipes: number | null;
+  favorites: number | null;
+  equipment: number | null;
+};
+
+const countOf = (result: PromiseSettledResult<unknown>): number | null =>
+  result.status === 'fulfilled' && Array.isArray(result.value) ? result.value.length : null;
 
 export default function Sidebar() {
   const [dbConnected, setDbConnected] = useState(false);
-  const [stats, setStats] = useState({ pantry: 0, recipes: 0, favorites: 0, equipment: 0 });
+  const [stats, setStats] = useState<Stats>({
+    pantry: null,
+    recipes: null,
+    favorites: null,
+    equipment: null
+  });
 
   useEffect(() => {
-    // Proste sprawdzanie statusu i pobieranie statystyk w tle
-    const fetchStats = async () => {
-      try {
-        const [pantryRes, recipesRes, equipRes] = await Promise.all([
-          fetch(`${API_BASE_URL}/pantry`),
-          fetch(`${API_BASE_URL}/recipes/matching`),
-          fetch(`${API_BASE_URL}/equipment`)
-        ]);
-        
-        if (pantryRes.ok && recipesRes.ok && equipRes.ok) {
-          const pantry = await pantryRes.json();
-          const recipes = await recipesRes.json();
-          const equip = await equipRes.json();
-          
-          setStats({
-            pantry: pantry.length || 0,
-            recipes: recipes.length || 0,
-            favorites: recipes.filter((r: any) => r.isFavorite).length || 0,
-            equipment: equip.length || 0
-          });
-          setDbConnected(true);
-        }
-      } catch (e) {
-        setDbConnected(false);
-      }
+    // Statystyki pobierane niezależnie – brak jednego endpointu nie psuje pozostałych.
+    // Status „Połączono” oznacza, że odpowiada spiżarnia (GET /api/spizarnia).
+    let cancelled = false;
+
+    Promise.allSettled([
+      apiFetch('/spizarnia'),
+      apiFetch('/przepisy'),
+      apiFetch('/sprzet')
+    ]).then(([pantry, recipes, equipment]) => {
+      if (cancelled) return;
+      const recipeList =
+        recipes.status === 'fulfilled' && Array.isArray(recipes.value) ? recipes.value : null;
+
+      setStats({
+        pantry: countOf(pantry),
+        recipes: countOf(recipes),
+        favorites: recipeList
+          ? recipeList.filter((r: { isFavorite?: boolean }) => r.isFavorite).length
+          : null,
+        equipment: countOf(equipment)
+      });
+      setDbConnected(pantry.status === 'fulfilled');
+    });
+
+    return () => {
+      cancelled = true;
     };
-    fetchStats();
   }, []);
+
+  const badge = (value: number | null) => (value === null ? '—' : value);
 
   // Funkcja pomocnicza do aktywnego linku
   const navClass = ({ isActive }: { isActive: boolean }) =>
@@ -80,7 +96,7 @@ export default function Sidebar() {
               Spiżarnia
             </span>
             <span className="text-xs px-2 py-0.5 rounded-full bg-slate-800 text-slate-300">
-              {dbConnected ? stats.pantry : '—'}
+              {badge(stats.pantry)}
             </span>
           </NavLink>
           <NavLink to="/przepisy" className={navClass}>
@@ -89,7 +105,7 @@ export default function Sidebar() {
               Przepisy
             </span>
             <span className="text-xs px-2 py-0.5 rounded-full bg-slate-800 text-slate-300">
-              {dbConnected ? stats.recipes : '—'}
+              {badge(stats.recipes)}
             </span>
           </NavLink>
           <NavLink to="/ulubione" className={navClass}>
@@ -98,7 +114,7 @@ export default function Sidebar() {
               Ulubione
             </span>
             <span className="text-xs px-2 py-0.5 rounded-full bg-slate-800 text-slate-300">
-              {dbConnected ? stats.favorites : '—'}
+              {badge(stats.favorites)}
             </span>
           </NavLink>
           <NavLink to="/wyposazenie" className={navClass}>
@@ -107,7 +123,7 @@ export default function Sidebar() {
               Wyposażenie kuchni
             </span>
             <span className="text-xs px-2 py-0.5 rounded-full bg-slate-800 text-slate-300">
-              {dbConnected ? stats.equipment : '—'}
+              {badge(stats.equipment)}
             </span>
           </NavLink>
           <NavLink to="/skaner-ai" className={navClass}>
