@@ -2,7 +2,7 @@
 // WSPÓLNA KONFIGURACJA KOMUNIKACJI Z BACKENDEM
 // ==========================================
 // Adres API ustawiamy w pliku .env (VITE_API_URL), domyślnie lokalny serwer Node.js
-// z katalogu backend/ (PORT=3000, wszystkie trasy pod /api).
+// z katalogu server/ (PORT=3000, wszystkie trasy pod /api).
 
 export const API_BASE_URL = (
   import.meta.env.VITE_API_URL ?? 'http://localhost:3000/api'
