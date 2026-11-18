@@ -1,0 +1,28 @@
+services:
+  - type: web
+    name: smartpantry-api
+    runtime: node
+    plan: free
+    region: frankfurt
+    branch: main
+    rootDir: server
+    buildCommand: npm ci
+    startCommand: npm start
+    healthCheckPath: /
+    envVars:
+      - key: NODE_VERSION
+        value: "24"
+      - key: DB_HOST
+        value: aws-1-eu-west-1.pooler.supabase.com
+      - key: DB_PORT
+        value: "5432"
+      - key: DB_NAME
+        value: postgres
+      - key: DB_USER
+        value: postgres.sbpwsvwzamlzklszoiml
+      - key: DB_SSL
+        value: "true"
+      - key: DB_PASSWORD
+        sync: false
+      - key: CLIENT_URL
+        sync: false
