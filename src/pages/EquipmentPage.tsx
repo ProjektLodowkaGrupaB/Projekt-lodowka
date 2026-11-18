@@ -18,7 +18,8 @@ import {
 // ==========================================
 // KONFIGURACJA WARSTWY KOMUNIKACJI HTTP/JSON
 // ==========================================
-import { API_BASE_URL } from '../api';
+import { apiFetch, ApiError } from '../api';
+import { fromApiEquipment, type ApiEquipment } from '../mappers';
 
 export type EquipmentStatus = 'gotowy' | 'w naprawie' | 'niedostępny';
 
@@ -71,25 +72,14 @@ export default function EquipmentPage() {
     setErrorMessage(null);
 
     try {
-      const response = await fetch(`${API_BASE_URL}/equipment`, {
-        method: 'GET',
-        headers: { Accept: 'application/json' }
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
-      }
-
-      const data = await response.json();
-      setEquipmentList(Array.isArray(data) ? data : []);
+      const data = await apiFetch<ApiEquipment[]>('/sprzet');
+      setEquipmentList(data.map(fromApiEquipment) as EquipmentItem[]);
       setDbConnected(true);
     } catch (err: unknown) {
       setDbConnected(false);
       setEquipmentList([]);
       setErrorMessage(
-        err instanceof Error
-          ? err.message
-          : 'Brak połączenia z serwerem REST API (Node.js / MySQL / PostgreSQL).'
+        err instanceof Error ? err.message : 'Brak połączenia z serwerem REST API.'
       );
     } finally {
       setIsLoading(false);
@@ -170,25 +160,21 @@ export default function EquipmentPage() {
     e.preventDefault();
     if (!formData.name.trim()) return;
 
-    const isEditing = Boolean(editingItem);
-    const url = isEditing
-      ? `${API_BASE_URL}/equipment/${editingItem?.id}`
-      : `${API_BASE_URL}/equipment`;
-    const method = isEditing ? 'PUT' : 'POST';
-
     try {
-      const response = await fetch(url, {
-        method,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData)
+      await apiFetch(editingItem ? `/sprzet/${editingItem.id}` : '/sprzet', {
+        method: editingItem ? 'PUT' : 'POST',
+        body: JSON.stringify({
+          nazwa: formData.name,
+          kategoria: formData.category,
+          status: formData.status,
+          notatki: formData.notes
+        })
       });
-
-      if (!response.ok) throw new Error('Błąd zapisu wyposażenia');
 
       await loadEquipmentData();
       closeModal();
-    } catch {
-      alert('Nie udało się zapisać wyposażenia w bazie danych.');
+    } catch (err) {
+      alert(err instanceof ApiError ? err.message : 'Nie udało się zapisać wyposażenia.');
     }
   };
 
@@ -200,13 +186,10 @@ export default function EquipmentPage() {
     if (item.status === newStatus) return;
 
     try {
-      const response = await fetch(`${API_BASE_URL}/equipment/${item.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...item, status: newStatus })
+      await apiFetch(`/sprzet/${item.id}/status`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status: newStatus })
       });
-
-      if (!response.ok) throw new Error('Błąd aktualizacji statusu');
 
       setEquipmentList((prev) =>
         prev.map((eq) => (eq.id === item.id ? { ...eq, status: newStatus } : eq))
@@ -221,11 +204,7 @@ export default function EquipmentPage() {
     if (!window.confirm('Czy na pewno chcesz usunąć to wyposażenie z kuchni?')) return;
 
     try {
-      const response = await fetch(`${API_BASE_URL}/equipment/${id}`, {
-        method: 'DELETE'
-      });
-
-      if (!response.ok) throw new Error('Błąd usuwania wyposażenia');
+      await apiFetch(`/sprzet/${id}`, { method: 'DELETE' });
 
       setEquipmentList((prev) => prev.filter((item) => item.id !== id));
     } catch {

@@ -21,30 +21,8 @@ import {
 // ==========================================
 // KONFIGURACJA WARSTWY KOMUNIKACJI HTTP/JSON
 // ==========================================
-import { API_BASE_URL } from '../api';
-
-export interface RecipeIngredient {
-  name: string;
-  amount: number;
-  unit: string;
-  kcalPer100g?: number;
-}
-
-export interface FavoriteRecipe {
-  id: number | string;
-  title: string;
-  description?: string;
-  prepTime: number;
-  servings: number;
-  kcalPerServing?: number;
-  isFavorite: boolean;
-  missingPercentage: number;
-  missingIngredients?: string[];
-  dietTags?: string[];
-  requiredEquipment?: string[];
-  ingredients: RecipeIngredient[];
-  instructions: string[];
-}
+import { apiFetch, ApiError } from '../api';
+import { fromApiRecipe, type ApiRecipe, type Recipe as FavoriteRecipe } from '../mappers';
 
 export default function FavoritesPage() {
   // Stany danych pobieranych z bazy danych (MySQL / PostgreSQL)
@@ -68,29 +46,14 @@ export default function FavoritesPage() {
     setErrorMessage(null);
 
     try {
-      const response = await fetch(`${API_BASE_URL}/recipes?favorite=true`, {
-        method: 'GET',
-        headers: { Accept: 'application/json' }
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
-      }
-
-      const data = await response.json();
-      const list = Array.isArray(data)
-        ? data.filter((r: FavoriteRecipe) => Boolean(r.isFavorite))
-        : [];
-
-      setFavorites(list);
+      const data = await apiFetch<ApiRecipe[]>('/przepisy?ulubione=true');
+      setFavorites(data.map(fromApiRecipe));
       setDbConnected(true);
     } catch (err: unknown) {
       setDbConnected(false);
       setFavorites([]);
       setErrorMessage(
-        err instanceof Error
-          ? err.message
-          : 'Brak połączenia z serwerem REST API (Node.js / MySQL / PostgreSQL).'
+        err instanceof Error ? err.message : 'Brak połączenia z serwerem REST API.'
       );
     } finally {
       setIsLoading(false);
@@ -101,18 +64,15 @@ export default function FavoritesPage() {
     loadFavorites();
   }, [loadFavorites]);
 
-  // Usuwanie przepisu z listy ulubionych (PATCH /api/recipes/:id/favorite)
+  // Usuwanie przepisu z listy ulubionych
   const handleRemoveFromFavorites = async (recipe: FavoriteRecipe, e: MouseEvent) => {
     e.stopPropagation();
 
     try {
-      const response = await fetch(`${API_BASE_URL}/recipes/${recipe.id}/favorite`, {
+      await apiFetch(`/przepisy/${recipe.id}/ulubione`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ isFavorite: false })
+        body: JSON.stringify({ ulubione: false })
       });
-
-      if (!response.ok) throw new Error('Błąd aktualizacji ulubionych');
 
       setFavorites((prev) => prev.filter((item) => item.id !== recipe.id));
       if (activeRecipe?.id === recipe.id) {
@@ -135,23 +95,16 @@ export default function FavoritesPage() {
     setIsCooking(true);
 
     try {
-      const scaleFactor = scaledServings / (activeRecipe.servings || 1);
-      const response = await fetch(`${API_BASE_URL}/recipes/${activeRecipe.id}/cook`, {
+      await apiFetch(`/przepisy/${activeRecipe.id}/ugotuj`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          servingsCooked: scaledServings,
-          scaleFactor
-        })
+        body: JSON.stringify({ porcje: scaledServings })
       });
-
-      if (!response.ok) throw new Error('Błąd aktualizacji stanu spiżarni');
 
       alert('Przepis wykonany! Odpowiednia ilość produktów została usunięta ze spiżarni.');
       setActiveRecipe(null);
       await loadFavorites();
-    } catch {
-      alert('Nie udało się zaktualizować stanu spiżarni. Upewnij się, że backend działa.');
+    } catch (err) {
+      alert(err instanceof ApiError ? err.message : 'Nie udało się zaktualizować stanu spiżarni.');
     } finally {
       setIsCooking(false);
     }

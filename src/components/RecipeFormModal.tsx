@@ -1,7 +1,15 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Check, FlaskConical, Plus, RefreshCw, Trash2, X } from 'lucide-react';
 import { apiFetch, ApiError } from '../api';
-import { DIFFICULTIES, UNITS, isValidUnit, type Difficulty } from '../constants';
+import {
+  AVAILABLE_ALLERGENS,
+  AVAILABLE_DIETS,
+  DIFFICULTIES,
+  UNITS,
+  isValidUnit,
+  type Difficulty
+} from '../constants';
+import { joinRecipeText, splitRecipeText, type ApiRecipe } from '../mappers';
 
 // ==========================================
 // FORMULARZ DODAWANIA / EDYCJI PRZEPISU (SCRUM-41)
@@ -17,19 +25,6 @@ import { DIFFICULTIES, UNITS, isValidUnit, type Difficulty } from '../constants'
 type Ingredient = { id: number; nazwa: string; domyslna_jednostka?: string | null };
 type Equipment = { id: number; nazwa: string; sprawny?: boolean | null };
 
-/** Wartości startowe przy edycji – nazwy pól jak w bazie. */
-export type RecipeFormInitial = {
-  id: number | string;
-  nazwa?: string;
-  czas?: number;
-  trudnosc?: string;
-  kalorycznosc?: number | null;
-  porcja?: number;
-  opis?: string | null;
-  sprzet?: number[];
-  skladniki?: { skladnik_id: number; qty: number | string; unit_meas: string }[];
-};
-
 type IngredientRow = { key: number; name: string; qty: string; unit: string };
 
 type FormErrors = {
@@ -43,7 +38,7 @@ type FormErrors = {
 };
 
 type Props = {
-  initial: RecipeFormInitial | null;
+  initial: ApiRecipe | null;
   onClose: () => void;
   onSaved: (message: string) => void;
 };
@@ -74,30 +69,6 @@ const toInt = (value: string) => {
 
 const toQty = (value: string) => Number(value.replace(',', '.'));
 
-/** Baza ma jedno pole opis – kroki zapisujemy jako numerowane linie pod opisem. */
-const STEPS_HEADER = 'Przygotowanie:';
-
-const splitDescription = (opis: string | null | undefined) => {
-  if (!opis) return { description: '', steps: [''] };
-  const idx = opis.indexOf(STEPS_HEADER);
-  if (idx === -1) return { description: opis, steps: [''] };
-  const steps = opis
-    .slice(idx + STEPS_HEADER.length)
-    .split('\n')
-    .map((line) => line.replace(/^\s*\d+\.\s*/, '').trim())
-    .filter(Boolean);
-  return { description: opis.slice(0, idx).trim(), steps: steps.length ? steps : [''] };
-};
-
-const joinDescription = (description: string, steps: string[]) => {
-  const cleanSteps = steps.map((s) => s.trim()).filter(Boolean);
-  const parts = [description.trim()];
-  if (cleanSteps.length) {
-    parts.push(`${STEPS_HEADER}\n${cleanSteps.map((s, i) => `${i + 1}. ${s}`).join('\n')}`);
-  }
-  return parts.filter(Boolean).join('\n\n') || null;
-};
-
 const inputClass = (hasError = false) =>
   `w-full px-3 py-2 rounded-xl bg-slate-950 border text-sm text-white focus:outline-none transition ${
     hasError ? 'border-rose-500/70 focus:border-rose-400' : 'border-slate-800 focus:border-emerald-500'
@@ -105,7 +76,7 @@ const inputClass = (hasError = false) =>
 
 export default function RecipeFormModal({ initial, onClose, onSaved }: Props) {
   const isEditing = initial !== null;
-  const initialText = splitDescription(initial?.opis);
+  const initialText = splitRecipeText(initial?.opis);
 
   // Słowniki z bazy
   const [ingredients, setIngredients] = useState<Ingredient[]>([]);
@@ -126,8 +97,12 @@ export default function RecipeFormModal({ initial, onClose, onSaved }: Props) {
     initial?.kalorycznosc != null ? String(initial.kalorycznosc) : ''
   );
   const [description, setDescription] = useState(initialText.description);
-  const [steps, setSteps] = useState<string[]>(initialText.steps);
+  const [steps, setSteps] = useState<string[]>(
+    initialText.steps.length > 0 ? initialText.steps : ['']
+  );
   const [selectedEquipment, setSelectedEquipment] = useState<number[]>(initial?.sprzet ?? []);
+  const [selectedDiets, setSelectedDiets] = useState<string[]>(initial?.diety ?? []);
+  const [selectedAllergens, setSelectedAllergens] = useState<string[]>(initial?.alergeny ?? []);
   const [rows, setRows] = useState<IngredientRow[]>([newRow()]);
 
   const [errors, setErrors] = useState<FormErrors>({});
@@ -212,6 +187,14 @@ export default function RecipeFormModal({ initial, onClose, onSaved }: Props) {
       prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
     );
 
+  const toggleTag = (
+    value: string,
+    setter: React.Dispatch<React.SetStateAction<string[]>>
+  ) =>
+    setter((prev) =>
+      prev.includes(value) ? prev.filter((item) => item !== value) : [...prev, value]
+    );
+
   const validate = () => {
     const e: FormErrors = {};
     const name = nazwa.trim();
@@ -252,9 +235,11 @@ export default function RecipeFormModal({ initial, onClose, onSaved }: Props) {
     trudnosc,
     kalorycznosc: kalorycznosc.trim() === '' ? 0 : toInt(kalorycznosc),
     porcja: toInt(porcja),
-    opis: joinDescription(description, steps),
+    opis: joinRecipeText(description, steps),
     sprzet: selectedEquipment,
-    sprzet_alternatywny: [] as number[],
+    sprzet_alternatywny: initial?.sprzet_alternatywny ?? [],
+    diety: selectedDiets,
+    alergeny: selectedAllergens,
     skladniki: rows
       .filter((r) => r.name.trim())
       .map((r) => ({
@@ -574,6 +559,36 @@ export default function RecipeFormModal({ initial, onClose, onSaved }: Props) {
                 </div>
               )}
             </fieldset>
+
+            {/* Diety i alergeny */}
+            {[
+              { legend: 'Diety', options: AVAILABLE_DIETS, selected: selectedDiets, setter: setSelectedDiets },
+              { legend: 'Alergeny', options: AVAILABLE_ALLERGENS, selected: selectedAllergens, setter: setSelectedAllergens }
+            ].map(({ legend, options, selected, setter }) => (
+              <fieldset key={legend} className="space-y-2">
+                <legend className="text-xs font-medium text-slate-400">{legend}</legend>
+                <div className="flex flex-wrap gap-2">
+                  {options.map((option) => {
+                    const active = selected.includes(option);
+                    return (
+                      <button
+                        key={option}
+                        type="button"
+                        aria-pressed={active}
+                        onClick={() => toggleTag(option, setter)}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition ${
+                          active
+                            ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-300'
+                            : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200'
+                        }`}
+                      >
+                        {option}
+                      </button>
+                    );
+                  })}
+                </div>
+              </fieldset>
+            ))}
 
             {/* Opis */}
             <div className="space-y-1">

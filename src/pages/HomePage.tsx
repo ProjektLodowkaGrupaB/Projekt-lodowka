@@ -22,6 +22,14 @@ import {
 // SERWER
 
 import { API_BASE_URL } from '../api';
+import {
+  fromApiEquipment,
+  fromApiPantryProduct,
+  fromApiRecipe,
+  type ApiEquipment,
+  type ApiPantryProduct,
+  type ApiRecipe
+} from '../mappers';
 
 export interface PantryItem {
   id: number | string;
@@ -108,17 +116,17 @@ export default function HomePage() {
     const timeoutId = setTimeout(() => controller.abort(), 5000);
 
     try {
-      const [pantryData, recipesData, equipmentData, aiData] = await Promise.all([
-        fetchJson<PantryItem[]>('/pantry', controller.signal),
-        fetchJson<Recipe[]>('/recipes/matching', controller.signal),
-        fetchJson<EquipmentItem[]>('/equipment', controller.signal),
-        fetchJson<AIRecommendation[]>('/ai/recommendations', controller.signal)
+      const [pantryData, recipesData, equipmentData] = await Promise.all([
+        fetchJson<ApiPantryProduct[]>('/spizarnia', controller.signal),
+        fetchJson<ApiRecipe[]>('/przepisy/dopasowane', controller.signal),
+        fetchJson<ApiEquipment[]>('/sprzet', controller.signal)
       ]);
 
-      setPantryItems(Array.isArray(pantryData) ? pantryData : []);
-      setRecipes(Array.isArray(recipesData) ? recipesData : []);
-      setEquipment(Array.isArray(equipmentData) ? equipmentData : []);
-      setAiRecommendations(Array.isArray(aiData) ? aiData : []);
+      setPantryItems(pantryData.map(fromApiPantryProduct));
+      setRecipes(recipesData.map(fromApiRecipe));
+      setEquipment(equipmentData.map(fromApiEquipment));
+      // Rekomendacje AI nie mają jeszcze backendu – panel pokazuje stan pusty.
+      setAiRecommendations([]);
       setDbConnected(true);
     } catch (err: unknown) {
       setDbConnected(false);

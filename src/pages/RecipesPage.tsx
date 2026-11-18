@@ -23,38 +23,10 @@ import {
 // ==========================================
 // KONFIGURACJA WARSTWY KOMUNIKACJI HTTP/JSON
 // ==========================================
-import { API_BASE_URL } from '../api';
-import RecipeFormModal, { type RecipeFormInitial } from '../components/RecipeFormModal';
-
-export interface RecipeIngredient {
-  name: string;
-  amount: number;
-  unit: string;
-  kcalPer100g?: number;
-  inPantry?: boolean;
-}
-
-export interface Recipe {
-  id: number | string;
-  title: string;
-  description?: string;
-  prepTime: number;
-  servings: number;
-  kcalPerServing?: number;
-  isFavorite?: boolean;
-  missingPercentage: number;
-  missingIngredients?: string[];
-  dietTags?: string[];
-  allergens?: string[];
-  requiredEquipment?: string[];
-  equipmentReady?: boolean;
-  ingredients: RecipeIngredient[];
-  instructions: string[];
-}
-
-
-const AVAILABLE_DIETS = ['Bezmięsne (Wege)', 'Wegańskie', 'Bez glutenu', 'Bez laktozy', 'Keto'];
-const AVAILABLE_ALLERGENS = ['Gluten', 'Laktoza', 'Orzechy', 'Jajka', 'Soja'];
+import { apiFetch, ApiError } from '../api';
+import RecipeFormModal from '../components/RecipeFormModal';
+import { AVAILABLE_ALLERGENS, AVAILABLE_DIETS } from '../constants';
+import { fromApiRecipe, type ApiRecipe, type Recipe } from '../mappers';
 
 export default function RecipesPage() {
   // Stany danych pobieranych z bazy danych (MySQL / PostgreSQL)
@@ -77,7 +49,7 @@ export default function RecipesPage() {
 
   // Stany formularza dodawania / edycji przepisu (komponent RecipeFormModal)
   const [isFormOpen, setIsFormOpen] = useState<boolean>(false);
-  const [formInitial, setFormInitial] = useState<RecipeFormInitial | null>(null);
+  const [formInitial, setFormInitial] = useState<ApiRecipe | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
   // Pobieranie przepisów z backendu Node.js
@@ -86,25 +58,14 @@ export default function RecipesPage() {
     setErrorMessage(null);
 
     try {
-      const response = await fetch(`${API_BASE_URL}/recipes`, {
-        method: 'GET',
-        headers: { Accept: 'application/json' }
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
-      }
-
-      const data = await response.json();
-      setRecipes(Array.isArray(data) ? data : []);
+      const data = await apiFetch<ApiRecipe[]>('/przepisy');
+      setRecipes(data.map(fromApiRecipe));
       setDbConnected(true);
     } catch (err: unknown) {
       setDbConnected(false);
       setRecipes([]);
       setErrorMessage(
-        err instanceof Error
-          ? err.message
-          : 'Brak połączenia z serwerem REST API (Node.js / MySQL / PostgreSQL).'
+        err instanceof Error ? err.message : 'Brak połączenia z serwerem REST API.'
       );
     } finally {
       setIsLoading(false);
@@ -139,13 +100,10 @@ export default function RecipesPage() {
   const handleToggleFavorite = async (recipe: Recipe, e: React.MouseEvent) => {
     e.stopPropagation();
     try {
-      const response = await fetch(`${API_BASE_URL}/recipes/${recipe.id}/favorite`, {
+      await apiFetch(`/przepisy/${recipe.id}/ulubione`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ isFavorite: !recipe.isFavorite })
+        body: JSON.stringify({ ulubione: !recipe.isFavorite })
       });
-
-      if (!response.ok) throw new Error('Błąd aktualizacji ulubionych');
 
       setRecipes((prev) =>
         prev.map((r) => (r.id === recipe.id ? { ...r, isFavorite: !r.isFavorite } : r))
@@ -164,23 +122,16 @@ export default function RecipesPage() {
     setIsCooking(true);
 
     try {
-      const scaleFactor = scaledServings / (activeRecipe.servings || 1);
-      const response = await fetch(`${API_BASE_URL}/recipes/${activeRecipe.id}/cook`, {
+      await apiFetch(`/przepisy/${activeRecipe.id}/ugotuj`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          servingsCooked: scaledServings,
-          scaleFactor
-        })
+        body: JSON.stringify({ porcje: scaledServings })
       });
 
-      if (!response.ok) throw new Error('Błąd aktualizacji stanu spiżarni');
-
-      alert('Przepis wykonany! Zużyte składniki zostały automatycznie odjęte ze spiżarni.');
+      setNotice('Przepis wykonany! Zużyte składniki zostały odjęte ze spiżarni.');
       setActiveRecipe(null);
       await loadRecipes();
-    } catch {
-      alert('Nie udało się odjąć składników ze spiżarni. Upewnij się, że backend działa.');
+    } catch (err) {
+      alert(err instanceof ApiError ? err.message : 'Nie udało się odjąć składników ze spiżarni.');
     } finally {
       setIsCooking(false);
     }
@@ -192,10 +143,7 @@ export default function RecipesPage() {
     if (!window.confirm('Czy na pewno chcesz usunąć ten przepis z bazy danych?')) return;
 
     try {
-      const response = await fetch(`${API_BASE_URL}/recipes/${id}`, {
-        method: 'DELETE'
-      });
-      if (!response.ok) throw new Error('Błąd usuwania przepisu');
+      await apiFetch(`/przepisy/${id}`, { method: 'DELETE' });
 
       setRecipes((prev) => prev.filter((r) => r.id !== id));
       if (activeRecipe?.id === id) setActiveRecipe(null);
@@ -207,18 +155,7 @@ export default function RecipesPage() {
   // Otwieranie formularza dodawania / edycji przepisu
   const openFormModal = (recipe?: Recipe, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
-    setFormInitial(
-      recipe
-        ? {
-            id: recipe.id,
-            nazwa: recipe.title,
-            czas: recipe.prepTime,
-            porcja: recipe.servings,
-            kalorycznosc: recipe.kcalPerServing ?? null,
-            opis: recipe.description ?? null
-          }
-        : null
-    );
+    setFormInitial(recipe ? recipe.raw : null);
     setIsFormOpen(true);
   };
 
