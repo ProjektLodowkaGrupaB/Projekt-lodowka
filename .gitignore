@@ -22,3 +22,6 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Zmienne środowiskowe (adres API) – wzór w .env.example
+.env
