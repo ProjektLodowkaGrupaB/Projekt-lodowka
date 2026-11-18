@@ -92,6 +92,13 @@ export default function FavoritesPage() {
   // Automatyczne usuwanie składników ze spiżarni po wykonaniu przepisu
   const handleCookRecipe = async () => {
     if (!activeRecipe) return;
+    if (
+      !window.confirm(
+              )
+    ) {
+      return;
+    }
+
     setIsCooking(true);
 
     try {
