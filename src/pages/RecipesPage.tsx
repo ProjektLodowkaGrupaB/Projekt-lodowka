@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useParams } from 'react-router-dom';
 import {
   Utensils,
   Plus,
@@ -23,38 +24,10 @@ import {
 // ==========================================
 // KONFIGURACJA WARSTWY KOMUNIKACJI HTTP/JSON
 // ==========================================
-import { API_BASE_URL } from '../api';
-import RecipeFormModal, { type RecipeFormInitial } from '../components/RecipeFormModal';
-
-export interface RecipeIngredient {
-  name: string;
-  amount: number;
-  unit: string;
-  kcalPer100g?: number;
-  inPantry?: boolean;
-}
-
-export interface Recipe {
-  id: number | string;
-  title: string;
-  description?: string;
-  prepTime: number;
-  servings: number;
-  kcalPerServing?: number;
-  isFavorite?: boolean;
-  missingPercentage: number;
-  missingIngredients?: string[];
-  dietTags?: string[];
-  allergens?: string[];
-  requiredEquipment?: string[];
-  equipmentReady?: boolean;
-  ingredients: RecipeIngredient[];
-  instructions: string[];
-}
-
-
-const AVAILABLE_DIETS = ['Bezmięsne (Wege)', 'Wegańskie', 'Bez glutenu', 'Bez laktozy', 'Keto'];
-const AVAILABLE_ALLERGENS = ['Gluten', 'Laktoza', 'Orzechy', 'Jajka', 'Soja'];
+import { apiFetch, ApiError } from '../api';
+import RecipeFormModal from '../components/RecipeFormModal';
+import { AVAILABLE_ALLERGENS, AVAILABLE_DIETS } from '../constants';
+import { toPrzepis, type Przepis as Recipe, type PrzepisApi } from '../model';
 
 export default function RecipesPage() {
   // Stany danych pobieranych z bazy danych (MySQL / PostgreSQL)
@@ -77,7 +50,7 @@ export default function RecipesPage() {
 
   // Stany formularza dodawania / edycji przepisu (komponent RecipeFormModal)
   const [isFormOpen, setIsFormOpen] = useState<boolean>(false);
-  const [formInitial, setFormInitial] = useState<RecipeFormInitial | null>(null);
+  const [formInitial, setFormInitial] = useState<Recipe | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
   // Pobieranie przepisów z backendu Node.js
@@ -86,25 +59,14 @@ export default function RecipesPage() {
     setErrorMessage(null);
 
     try {
-      const response = await fetch(`${API_BASE_URL}/recipes`, {
-        method: 'GET',
-        headers: { Accept: 'application/json' }
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
-      }
-
-      const data = await response.json();
-      setRecipes(Array.isArray(data) ? data : []);
+      const data = await apiFetch<PrzepisApi[]>('/przepisy');
+      setRecipes(data.map(toPrzepis));
       setDbConnected(true);
     } catch (err: unknown) {
       setDbConnected(false);
       setRecipes([]);
       setErrorMessage(
-        err instanceof Error
-          ? err.message
-          : 'Brak połączenia z serwerem REST API (Node.js / MySQL / PostgreSQL).'
+        err instanceof Error ? err.message : 'Brak połączenia z serwerem REST API.'
       );
     } finally {
       setIsLoading(false);
@@ -122,6 +84,21 @@ export default function RecipesPage() {
     }
   }, [loadRecipes]);
 
+  // Adres /przepisy/:id otwiera szczegóły przepisu raz, po wczytaniu listy
+  const { id: routeRecipeId } = useParams();
+  const openedRouteId = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!routeRecipeId || openedRouteId.current === routeRecipeId) return;
+
+    const recipe = recipes.find((item) => String(item.id) === routeRecipeId);
+    if (recipe) {
+      openedRouteId.current = routeRecipeId;
+      setActiveRecipe(recipe);
+      setScaledServings(recipe.porcja || 2);
+    }
+  }, [routeRecipeId, recipes]);
+
   // Komunikat o powodzeniu znika po kilku sekundach
   useEffect(() => {
     if (!notice) return;
@@ -132,26 +109,23 @@ export default function RecipesPage() {
   // Otwieranie szczegółów przepisu z inicjalizacją domyślnej liczby porcji
   const openRecipeDetails = (recipe: Recipe) => {
     setActiveRecipe(recipe);
-    setScaledServings(recipe.servings || 2);
+    setScaledServings(recipe.porcja || 2);
   };
 
   // Przełączanie ulubionego przepisu w bazie danych
   const handleToggleFavorite = async (recipe: Recipe, e: React.MouseEvent) => {
     e.stopPropagation();
     try {
-      const response = await fetch(`${API_BASE_URL}/recipes/${recipe.id}/favorite`, {
+      await apiFetch(`/przepisy/${recipe.id}/ulubione`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ isFavorite: !recipe.isFavorite })
+        body: JSON.stringify({ ulubione: !recipe.ulubione })
       });
 
-      if (!response.ok) throw new Error('Błąd aktualizacji ulubionych');
-
       setRecipes((prev) =>
-        prev.map((r) => (r.id === recipe.id ? { ...r, isFavorite: !r.isFavorite } : r))
+        prev.map((r) => (r.id === recipe.id ? { ...r, ulubione: !r.ulubione } : r))
       );
       if (activeRecipe && activeRecipe.id === recipe.id) {
-        setActiveRecipe({ ...activeRecipe, isFavorite: !activeRecipe.isFavorite });
+        setActiveRecipe({ ...activeRecipe, ulubione: !activeRecipe.ulubione });
       }
     } catch {
       alert('Nie udało się zaktualizować listy ulubionych (sprawdź połączenie z API).');
@@ -161,26 +135,27 @@ export default function RecipesPage() {
   // Automatyczne usuwanie składników ze spiżarni po wykonaniu przepisu
   const handleCookRecipe = async () => {
     if (!activeRecipe) return;
+    if (
+      !window.confirm(
+        `Odjąć ze spiżarni składniki na ${scaledServings} porcji przepisu „${activeRecipe.nazwa}”?`
+      )
+    ) {
+      return;
+    }
+
     setIsCooking(true);
 
     try {
-      const scaleFactor = scaledServings / (activeRecipe.servings || 1);
-      const response = await fetch(`${API_BASE_URL}/recipes/${activeRecipe.id}/cook`, {
+      await apiFetch(`/przepisy/${activeRecipe.id}/ugotuj`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          servingsCooked: scaledServings,
-          scaleFactor
-        })
+        body: JSON.stringify({ porcje: scaledServings })
       });
 
-      if (!response.ok) throw new Error('Błąd aktualizacji stanu spiżarni');
-
-      alert('Przepis wykonany! Zużyte składniki zostały automatycznie odjęte ze spiżarni.');
+      setNotice('Przepis wykonany! Zużyte składniki zostały odjęte ze spiżarni.');
       setActiveRecipe(null);
       await loadRecipes();
-    } catch {
-      alert('Nie udało się odjąć składników ze spiżarni. Upewnij się, że backend działa.');
+    } catch (err) {
+      alert(err instanceof ApiError ? err.message : 'Nie udało się odjąć składników ze spiżarni.');
     } finally {
       setIsCooking(false);
     }
@@ -192,10 +167,7 @@ export default function RecipesPage() {
     if (!window.confirm('Czy na pewno chcesz usunąć ten przepis z bazy danych?')) return;
 
     try {
-      const response = await fetch(`${API_BASE_URL}/recipes/${id}`, {
-        method: 'DELETE'
-      });
-      if (!response.ok) throw new Error('Błąd usuwania przepisu');
+      await apiFetch(`/przepisy/${id}`, { method: 'DELETE' });
 
       setRecipes((prev) => prev.filter((r) => r.id !== id));
       if (activeRecipe?.id === id) setActiveRecipe(null);
@@ -207,18 +179,7 @@ export default function RecipesPage() {
   // Otwieranie formularza dodawania / edycji przepisu
   const openFormModal = (recipe?: Recipe, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
-    setFormInitial(
-      recipe
-        ? {
-            id: recipe.id,
-            nazwa: recipe.title,
-            czas: recipe.prepTime,
-            porcja: recipe.servings,
-            kalorycznosc: recipe.kcalPerServing ?? null,
-            opis: recipe.description ?? null
-          }
-        : null
-    );
+    setFormInitial(recipe ?? null);
     setIsFormOpen(true);
   };
 
@@ -237,31 +198,31 @@ export default function RecipesPage() {
       // Wyszukiwanie po nazwie
       if (
         searchQuery.trim() &&
-        !recipe.title.toLowerCase().includes(searchQuery.toLowerCase())
+        !recipe.nazwa.toLowerCase().includes(searchQuery.toLowerCase())
       ) {
         return false;
       }
 
       // Filtr dostępności składników (100% lub braki do 25%)
-      const missing = recipe.missingPercentage ?? 0;
+      const missing = recipe.procent_brakow ?? 0;
       if (matchFilter === '100' && missing !== 0) return false;
       if (matchFilter === '75' && (missing === 0 || missing > 25)) return false;
 
       // Filtr dostępności sprawnego wyposażenia kuchni
-      if (onlyReadyEquipment && recipe.equipmentReady === false) {
+      if (onlyReadyEquipment && recipe.sprzet_gotowy === false) {
         return false;
       }
 
       // Filtr wybranych diet (np. Bezmięsne, Bez glutenu)
       if (selectedDiets.length > 0) {
-        const tags = recipe.dietTags || [];
+        const tags = recipe.diety || [];
         const hasAllSelectedDiets = selectedDiets.every((d) => tags.includes(d));
         if (!hasAllSelectedDiets) return false;
       }
 
       // Wykluczanie alergenów podanych przez użytkownika
       if (excludedAllergens.length > 0) {
-        const recipeAllergens = recipe.allergens || [];
+        const recipeAllergens = recipe.alergeny || [];
         const containsForbiddenAllergen = excludedAllergens.some((a) =>
           recipeAllergens.includes(a)
         );
@@ -478,7 +439,7 @@ export default function RecipesPage() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
           {filteredRecipes.map((recipe) => {
-            const missing = recipe.missingPercentage ?? 0;
+            const missing = recipe.procent_brakow ?? 0;
             const isFullMatch = missing === 0;
             const isPartialMatch = missing > 0 && missing <= 25;
 
@@ -509,14 +470,14 @@ export default function RecipesPage() {
                       <button
                         onClick={(e) => handleToggleFavorite(recipe, e)}
                         className={`p-1.5 rounded-lg transition ${
-                          recipe.isFavorite
+                          recipe.ulubione
                             ? 'text-rose-400 bg-rose-500/10'
                             : 'text-slate-400 hover:text-white hover:bg-slate-800'
                         }`}
                         title="Dodaj do ulubionych"
                       >
                         <Heart
-                          className={`w-4 h-4 ${recipe.isFavorite ? 'fill-rose-400' : ''}`}
+                          className={`w-4 h-4 ${recipe.ulubione ? 'fill-rose-400' : ''}`}
                         />
                       </button>
                       <button
@@ -539,19 +500,19 @@ export default function RecipesPage() {
                   {/* Tytuł i opis */}
                   <div>
                     <h3 className="text-base font-bold text-white group-hover:text-emerald-400 transition">
-                      {recipe.title}
+                      {recipe.nazwa}
                     </h3>
-                    {recipe.description && (
+                    {recipe.opis_krotki && (
                       <p className="text-xs text-slate-400 mt-1 line-clamp-2">
-                        {recipe.description}
+                        {recipe.opis_krotki}
                       </p>
                     )}
                   </div>
 
                   {/* Tagi dietetyczne */}
-                  {recipe.dietTags && recipe.dietTags.length > 0 && (
+                  {recipe.diety && recipe.diety.length > 0 && (
                     <div className="flex flex-wrap gap-1.5">
-                      {recipe.dietTags.map((tag, idx) => (
+                      {recipe.diety.map((tag, idx) => (
                         <span
                           key={idx}
                           className="text-[10px] px-2 py-0.5 rounded-md bg-slate-950 text-slate-300 border border-slate-800"
@@ -564,15 +525,15 @@ export default function RecipesPage() {
 
                   {/* Wizualizacja brakujących produktów (gdy brakuje <= 25%) */}
                   {isPartialMatch &&
-                    recipe.missingIngredients &&
-                    recipe.missingIngredients.length > 0 && (
+                    recipe.brakujace &&
+                    recipe.brakujace.length > 0 && (
                       <div className="p-3 rounded-xl bg-amber-500/5 border border-amber-500/20 space-y-1.5">
                         <p className="text-[11px] font-medium text-amber-300 flex items-center gap-1.5">
                           <AlertTriangle className="w-3.5 h-3.5" />
                           Brakujące produkty (≤ 25%):
                         </p>
                         <div className="flex flex-wrap gap-1">
-                          {recipe.missingIngredients.map((item, idx) => (
+                          {recipe.brakujace.map((item, idx) => (
                             <span
                               key={idx}
                               className="text-[11px] px-2 py-0.5 rounded bg-amber-500/15 text-amber-200"
@@ -589,15 +550,15 @@ export default function RecipesPage() {
                 <div className="pt-3 border-t border-slate-800/80 flex items-center justify-between text-xs text-slate-400">
                   <span className="flex items-center gap-1">
                     <Clock className="w-3.5 h-3.5 text-sky-400" />
-                    {recipe.prepTime} min
+                    {recipe.czas} min
                   </span>
                   <span className="flex items-center gap-1">
                     <Users className="w-3.5 h-3.5 text-purple-400" />
-                    {recipe.servings} porcje
+                    {recipe.porcja} porcje
                   </span>
                   <span className="flex items-center gap-1">
                     <Flame className="w-3.5 h-3.5 text-orange-400" />
-                    {recipe.kcalPerServing ? `${recipe.kcalPerServing} kcal` : '— kcal'}
+                    {recipe.kalorycznosc ? `${recipe.kalorycznosc} kcal` : '— kcal'}
                   </span>
                 </div>
               </div>
@@ -614,9 +575,9 @@ export default function RecipesPage() {
           <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto shadow-2xl p-6 space-y-6">
             <div className="flex items-start justify-between gap-4 border-b border-slate-800 pb-4">
               <div>
-                <h3 className="text-xl font-bold text-white">{activeRecipe.title}</h3>
-                {activeRecipe.description && (
-                  <p className="text-sm text-slate-400 mt-1">{activeRecipe.description}</p>
+                <h3 className="text-xl font-bold text-white">{activeRecipe.nazwa}</h3>
+                {activeRecipe.opis_krotki && (
+                  <p className="text-sm text-slate-400 mt-1">{activeRecipe.opis_krotki}</p>
                 )}
               </div>
               <button
@@ -661,8 +622,8 @@ export default function RecipesPage() {
                 <div className="text-right">
                   <p className="text-xs text-slate-400">Kaloryczność całkowita</p>
                   <p className="text-sm font-bold text-orange-400">
-                    {activeRecipe.kcalPerServing
-                      ? `${activeRecipe.kcalPerServing * scaledServings} kcal (${activeRecipe.kcalPerServing} kcal/porcja)`
+                    {activeRecipe.kalorycznosc
+                      ? `${activeRecipe.kalorycznosc * scaledServings} kcal (${activeRecipe.kalorycznosc} kcal/porcja)`
                       : 'Brak danych kcal'}
                   </p>
                 </div>
@@ -676,32 +637,32 @@ export default function RecipesPage() {
                   Wymagane składniki ({scaledServings} porcji)
                 </h4>
                 <ul className="space-y-2">
-                  {activeRecipe.ingredients.map((ing, idx) => {
-                    const scale = scaledServings / (activeRecipe.servings || 1);
-                    const scaledAmount = Math.round(ing.amount * scale * 10) / 10;
+                  {activeRecipe.skladniki.map((ing, idx) => {
+                    const scale = scaledServings / (activeRecipe.porcja || 1);
+                    const scaledAmount = Math.round(ing.qty * scale * 10) / 10;
                     return (
                       <li
                         key={idx}
                         className="p-3 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-between text-sm"
                       >
-                        <span className="text-slate-200">{ing.name}</span>
+                        <span className="text-slate-200">{ing.nazwa}</span>
                         <span className="font-semibold text-emerald-400">
-                          {scaledAmount} {ing.unit}
+                          {scaledAmount} {ing.unit_meas}
                         </span>
                       </li>
                     );
                   })}
                 </ul>
 
-                {activeRecipe.requiredEquipment &&
-                  activeRecipe.requiredEquipment.length > 0 && (
+                {activeRecipe.sprzet_nazwy &&
+                  activeRecipe.sprzet_nazwy.length > 0 && (
                     <div className="pt-3">
                       <h5 className="text-xs font-medium text-slate-400 mb-2 flex items-center gap-1.5">
                         <Wrench className="w-3.5 h-3.5 text-purple-400" />
                         Wymagane wyposażenie kuchni:
                       </h5>
                       <div className="flex flex-wrap gap-1.5">
-                        {activeRecipe.requiredEquipment.map((eq, idx) => (
+                        {activeRecipe.sprzet_nazwy.map((eq, idx) => (
                           <span
                             key={idx}
                             className="text-xs px-2.5 py-1 rounded-lg bg-slate-950 border border-slate-800 text-slate-300"
@@ -719,7 +680,7 @@ export default function RecipesPage() {
                   Instrukcja przygotowania
                 </h4>
                 <ol className="space-y-3">
-                  {activeRecipe.instructions.map((step, idx) => (
+                  {activeRecipe.kroki.map((step, idx) => (
                     <li
                       key={idx}
                       className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 text-sm text-slate-300 flex gap-3"

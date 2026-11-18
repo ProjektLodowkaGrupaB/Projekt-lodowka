@@ -1,7 +1,15 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Check, FlaskConical, Plus, RefreshCw, Trash2, X } from 'lucide-react';
 import { apiFetch, ApiError } from '../api';
-import { DIFFICULTIES, UNITS, isValidUnit, type Difficulty } from '../constants';
+import {
+  AVAILABLE_ALLERGENS,
+  AVAILABLE_DIETS,
+  DIFFICULTIES,
+  UNITS,
+  isValidUnit,
+  type Difficulty
+} from '../constants';
+import { joinRecipeText, splitRecipeText, type Przepis, type Skladnik, type Sprzet } from '../model';
 
 // ==========================================
 // FORMULARZ DODAWANIA / EDYCJI PRZEPISU (SCRUM-41)
@@ -13,22 +21,6 @@ import { DIFFICULTIES, UNITS, isValidUnit, type Difficulty } from '../constants'
 //   skladniki: [{ skladnik_id, qty, unit_meas }]
 // }
 // Słowniki do list wyboru: GET /api/skladniki i GET /api/sprzet.
-
-type Ingredient = { id: number; nazwa: string; domyslna_jednostka?: string | null };
-type Equipment = { id: number; nazwa: string; sprawny?: boolean | null };
-
-/** Wartości startowe przy edycji – nazwy pól jak w bazie. */
-export type RecipeFormInitial = {
-  id: number | string;
-  nazwa?: string;
-  czas?: number;
-  trudnosc?: string;
-  kalorycznosc?: number | null;
-  porcja?: number;
-  opis?: string | null;
-  sprzet?: number[];
-  skladniki?: { skladnik_id: number; qty: number | string; unit_meas: string }[];
-};
 
 type IngredientRow = { key: number; name: string; qty: string; unit: string };
 
@@ -43,20 +35,27 @@ type FormErrors = {
 };
 
 type Props = {
-  initial: RecipeFormInitial | null;
+  initial: Przepis | null;
   onClose: () => void;
   onSaved: (message: string) => void;
 };
 
 /** Przykładowe słowniki, gdy backend nie udostępnia jeszcze /skladniki i /sprzet. */
-const DEMO_INGREDIENTS: Ingredient[] = [
+const DEMO_INGREDIENTS: Skladnik[] = [
   'Makaron spaghetti', 'Pomidory', 'Czosnek', 'Cebula', 'Oliwa', 'Jajka', 'Mleko',
   'Mąka pszenna', 'Masło', 'Ser żółty', 'Szpinak', 'Ryż basmati', 'Pierś z kurczaka', 'Sól', 'Pieprz'
 ].map((nazwa, i) => ({ id: i + 1, nazwa, domyslna_jednostka: null }));
 
-const DEMO_EQUIPMENT: Equipment[] = [
+const DEMO_EQUIPMENT: Sprzet[] = [
   'Piekarnik', 'Patelnia', 'Garnek', 'Blender', 'Mikser', 'Mikrofalówka'
-].map((nazwa, i) => ({ id: i + 1, nazwa, sprawny: true }));
+].map((nazwa, i) => ({
+  id: i + 1,
+  nazwa,
+  sprawny: true,
+  kategoria: 'AGD małe',
+  status_opis: 'gotowy',
+  notatki: ''
+}));
 
 let rowKey = 0;
 const newRow = (partial: Partial<IngredientRow> = {}): IngredientRow => ({
@@ -74,30 +73,6 @@ const toInt = (value: string) => {
 
 const toQty = (value: string) => Number(value.replace(',', '.'));
 
-/** Baza ma jedno pole opis – kroki zapisujemy jako numerowane linie pod opisem. */
-const STEPS_HEADER = 'Przygotowanie:';
-
-const splitDescription = (opis: string | null | undefined) => {
-  if (!opis) return { description: '', steps: [''] };
-  const idx = opis.indexOf(STEPS_HEADER);
-  if (idx === -1) return { description: opis, steps: [''] };
-  const steps = opis
-    .slice(idx + STEPS_HEADER.length)
-    .split('\n')
-    .map((line) => line.replace(/^\s*\d+\.\s*/, '').trim())
-    .filter(Boolean);
-  return { description: opis.slice(0, idx).trim(), steps: steps.length ? steps : [''] };
-};
-
-const joinDescription = (description: string, steps: string[]) => {
-  const cleanSteps = steps.map((s) => s.trim()).filter(Boolean);
-  const parts = [description.trim()];
-  if (cleanSteps.length) {
-    parts.push(`${STEPS_HEADER}\n${cleanSteps.map((s, i) => `${i + 1}. ${s}`).join('\n')}`);
-  }
-  return parts.filter(Boolean).join('\n\n') || null;
-};
-
 const inputClass = (hasError = false) =>
   `w-full px-3 py-2 rounded-xl bg-slate-950 border text-sm text-white focus:outline-none transition ${
     hasError ? 'border-rose-500/70 focus:border-rose-400' : 'border-slate-800 focus:border-emerald-500'
@@ -105,11 +80,11 @@ const inputClass = (hasError = false) =>
 
 export default function RecipeFormModal({ initial, onClose, onSaved }: Props) {
   const isEditing = initial !== null;
-  const initialText = splitDescription(initial?.opis);
+  const initialText = splitRecipeText(initial?.opis);
 
   // Słowniki z bazy
-  const [ingredients, setIngredients] = useState<Ingredient[]>([]);
-  const [equipment, setEquipment] = useState<Equipment[]>([]);
+  const [ingredients, setIngredients] = useState<Skladnik[]>([]);
+  const [equipment, setEquipment] = useState<Sprzet[]>([]);
   const [dictLoading, setDictLoading] = useState(true);
   const [demoMode, setDemoMode] = useState(false);
 
@@ -125,9 +100,13 @@ export default function RecipeFormModal({ initial, onClose, onSaved }: Props) {
   const [kalorycznosc, setKalorycznosc] = useState(
     initial?.kalorycznosc != null ? String(initial.kalorycznosc) : ''
   );
-  const [description, setDescription] = useState(initialText.description);
-  const [steps, setSteps] = useState<string[]>(initialText.steps);
+  const [description, setDescription] = useState(initialText.opis_krotki);
+  const [steps, setSteps] = useState<string[]>(
+    initialText.kroki.length > 0 ? initialText.kroki : ['']
+  );
   const [selectedEquipment, setSelectedEquipment] = useState<number[]>(initial?.sprzet ?? []);
+  const [selectedDiets, setSelectedDiets] = useState<string[]>(initial?.diety ?? []);
+  const [selectedAllergens, setSelectedAllergens] = useState<string[]>(initial?.alergeny ?? []);
   const [rows, setRows] = useState<IngredientRow[]>([newRow()]);
 
   const [errors, setErrors] = useState<FormErrors>({});
@@ -140,8 +119,8 @@ export default function RecipeFormModal({ initial, onClose, onSaved }: Props) {
     let cancelled = false;
 
     Promise.allSettled([
-      apiFetch<Ingredient[]>('/skladniki'),
-      apiFetch<Equipment[]>('/sprzet')
+      apiFetch<Skladnik[]>('/skladniki'),
+      apiFetch<Sprzet[]>('/sprzet')
     ]).then(([ing, eq]) => {
       if (cancelled) return;
       const ok = ing.status === 'fulfilled' && Array.isArray(ing.value);
@@ -183,7 +162,7 @@ export default function RecipeFormModal({ initial, onClose, onSaved }: Props) {
   }, [onClose]);
 
   const ingredientByName = useMemo(() => {
-    const map = new Map<string, Ingredient>();
+    const map = new Map<string, Skladnik>();
     for (const i of ingredients) map.set(i.nazwa.trim().toLowerCase(), i);
     return map;
   }, [ingredients]);
@@ -210,6 +189,14 @@ export default function RecipeFormModal({ initial, onClose, onSaved }: Props) {
   const toggleEquipment = (id: number) =>
     setSelectedEquipment((prev) =>
       prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
+
+  const toggleTag = (
+    value: string,
+    setter: React.Dispatch<React.SetStateAction<string[]>>
+  ) =>
+    setter((prev) =>
+      prev.includes(value) ? prev.filter((item) => item !== value) : [...prev, value]
     );
 
   const validate = () => {
@@ -252,9 +239,11 @@ export default function RecipeFormModal({ initial, onClose, onSaved }: Props) {
     trudnosc,
     kalorycznosc: kalorycznosc.trim() === '' ? 0 : toInt(kalorycznosc),
     porcja: toInt(porcja),
-    opis: joinDescription(description, steps),
+    opis: joinRecipeText(description, steps),
     sprzet: selectedEquipment,
-    sprzet_alternatywny: [] as number[],
+    sprzet_alternatywny: initial?.sprzet_alternatywny ?? [],
+    diety: selectedDiets,
+    alergeny: selectedAllergens,
     skladniki: rows
       .filter((r) => r.name.trim())
       .map((r) => ({
@@ -574,6 +563,36 @@ export default function RecipeFormModal({ initial, onClose, onSaved }: Props) {
                 </div>
               )}
             </fieldset>
+
+            {/* Diety i alergeny */}
+            {[
+              { legend: 'Diety', options: AVAILABLE_DIETS, selected: selectedDiets, setter: setSelectedDiets },
+              { legend: 'Alergeny', options: AVAILABLE_ALLERGENS, selected: selectedAllergens, setter: setSelectedAllergens }
+            ].map(({ legend, options, selected, setter }) => (
+              <fieldset key={legend} className="space-y-2">
+                <legend className="text-xs font-medium text-slate-400">{legend}</legend>
+                <div className="flex flex-wrap gap-2">
+                  {options.map((option) => {
+                    const active = selected.includes(option);
+                    return (
+                      <button
+                        key={option}
+                        type="button"
+                        aria-pressed={active}
+                        onClick={() => toggleTag(option, setter)}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition ${
+                          active
+                            ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-300'
+                            : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200'
+                        }`}
+                      >
+                        {option}
+                      </button>
+                    );
+                  })}
+                </div>
+              </fieldset>
+            ))}
 
             {/* Opis */}
             <div className="space-y-1">

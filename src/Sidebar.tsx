@@ -48,7 +48,7 @@ export default function Sidebar() {
         pantry: countOf(pantry),
         recipes: countOf(recipes),
         favorites: recipeList
-          ? recipeList.filter((r: { isFavorite?: boolean }) => r.isFavorite).length
+          ? recipeList.filter((r: { ulubione?: boolean }) => r.ulubione).length
           : null,
         equipment: countOf(equipment)
       });
