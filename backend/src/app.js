@@ -1,35 +1,36 @@
 const express = require('express');
 const cors = require('cors');
-require('dotenv').config();
+require('dotenv').config({ quiet: true });
 
-// Import routerów
 const pantryRoutes = require('./routes/pantryRoutes');
 const recipeRoutes = require('./routes/recipeRoutes');
+const equipmentRoutes = require('./routes/equipmentRoutes');
+const ingredientRoutes = require('./routes/ingredientRoutes');
+const errorHandler = require('./middleware/errorHandler');
 
 const app = express();
 
-// Middleware
-app.use(express.json());
-
 app.use(cors({
-    origin: process.env.CLIENT_URL,
+    origin: process.env.CLIENT_URL || 'http://localhost:5173',
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
     allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
-// Endpoint testowy
+app.use(express.json());
+
 app.get('/', (req, res) => {
-    res.status(200).json({
-        message: 'API działa poprawnie!'
-    });
+    res.status(200).json({ message: 'API działa poprawnie!' });
 });
 
-// Podłączenie routerów
 app.use('/api', pantryRoutes);
 app.use('/api', recipeRoutes);
+app.use('/api', equipmentRoutes);
+app.use('/api', ingredientRoutes);
 
-// Middleware obsługi błędów
-const errorHandler = require('./middleware/errorHandler');
+app.use('/api', (req, res) => {
+    res.status(404).json({ message: 'Nie znaleziono zasobu.' });
+});
+
 app.use(errorHandler);
 
 module.exports = app;
