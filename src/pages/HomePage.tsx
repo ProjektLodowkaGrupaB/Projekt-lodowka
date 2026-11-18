@@ -23,6 +23,7 @@ import {
 
 import { API_BASE_URL } from '../api';
 import {
+  dniDoTerminu,
   toPrzepis,
   toSprzet,
   type Przepis as Recipe,
@@ -122,17 +123,13 @@ export default function HomePage() {
 
   // Wyliczenia wskaźników na podstawie danych z bazy
   const stats = useMemo(() => {
-    const now = new Date();
-
-    const expiredItems = pantryItems.filter((item) => {
-      if (!item.expire_date) return false;
-      return new Date(item.expire_date).getTime() < now.getTime();
-    });
+    const expiredItems = pantryItems.filter(
+      (item) => item.expire_date !== null && dniDoTerminu(item.expire_date) < 0
+    );
 
     const expiringSoonItems = pantryItems.filter((item) => {
       if (!item.expire_date) return false;
-      const diffDays =
-        (new Date(item.expire_date).getTime() - now.getTime()) / (1000 * 60 * 60 * 24);
+      const diffDays = dniDoTerminu(item.expire_date);
       return diffDays >= 0 && diffDays <= 3;
     });
 
@@ -184,14 +181,8 @@ export default function HomePage() {
 
   // Produkty wymagające uwagi (krótka data ważności lub przeterminowane)
   const urgentPantryItems = useMemo(() => {
-    const now = new Date();
     return pantryItems
-      .filter((item) => {
-        if (!item.expire_date) return false;
-        const diffDays =
-          (new Date(item.expire_date).getTime() - now.getTime()) / (1000 * 60 * 60 * 24);
-        return diffDays <= 3;
-      })
+      .filter((item) => item.expire_date !== null && dniDoTerminu(item.expire_date) <= 3)
       .sort((a, b) => {
         const dateA = a.expire_date ? new Date(a.expire_date).getTime() : 0;
         const dateB = b.expire_date ? new Date(b.expire_date).getTime() : 0;
@@ -586,7 +577,7 @@ export default function HomePage() {
               <div className="space-y-2.5">
                 {urgentPantryItems.map((item) => {
                   const isExpired = item.expire_date
-                    ? new Date(item.expire_date).getTime() < new Date().getTime()
+                    ? dniDoTerminu(item.expire_date) < 0
                     : false;
 
                   return (

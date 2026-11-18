@@ -94,7 +94,8 @@ export default function FavoritesPage() {
     if (!activeRecipe) return;
     if (
       !window.confirm(
-              )
+        `Odjąć ze spiżarni składniki na ${scaledServings} porcji przepisu „${activeRecipe.nazwa}”?`
+      )
     ) {
       return;
     }

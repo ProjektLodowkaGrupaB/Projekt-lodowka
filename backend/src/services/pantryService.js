@@ -1,5 +1,5 @@
 const pantryRepository = require('../repositories/pantryRepository');
-const { UNITS, MAX_QTY } = require('../constants');
+const { UNITS, MIN_QTY, MAX_QTY, MAX_INT } = require('../constants');
 const { httpError, orNotFound } = require('../utils/http');
 
 const NOT_FOUND = 'Nie znaleziono produktu w spiżarni.';
@@ -18,14 +18,14 @@ const validate = (body) => {
     if (typeof nazwa !== 'string' || !nazwa.trim() || nazwa.trim().length > 100) {
         errors.push('Nazwa jest wymagana (do 100 znaków).');
     }
-    if (typeof qty !== 'number' || !Number.isFinite(qty) || qty <= 0 || qty > MAX_QTY) {
-        errors.push('Ilość musi być liczbą większą od zera.');
+    if (typeof qty !== 'number' || !Number.isFinite(qty) || qty < MIN_QTY || qty > MAX_QTY) {
+        errors.push('Ilość musi wynosić co najmniej 0,01.');
     }
     if (!UNITS.includes(unit_meas)) errors.push('Niepoprawna jednostka.');
     if (expire_date !== null && !isValidDate(expire_date)) {
         errors.push('Data ważności musi mieć format RRRR-MM-DD.');
     }
-    if (kalorie !== null && (!Number.isInteger(kalorie) || kalorie < 0)) {
+    if (kalorie !== null && (!Number.isInteger(kalorie) || kalorie < 0 || kalorie > MAX_INT)) {
         errors.push('Kalorie muszą być liczbą całkowitą nie mniejszą od zera.');
     }
     if (opis !== undefined && opis !== null && (typeof opis !== 'string' || opis.length > 1000)) {

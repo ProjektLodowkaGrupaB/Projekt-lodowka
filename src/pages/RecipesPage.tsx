@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useParams } from 'react-router-dom';
 import {
   Utensils,
   Plus,
@@ -83,6 +84,21 @@ export default function RecipesPage() {
     }
   }, [loadRecipes]);
 
+  // Adres /przepisy/:id otwiera szczegóły przepisu raz, po wczytaniu listy
+  const { id: routeRecipeId } = useParams();
+  const openedRouteId = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!routeRecipeId || openedRouteId.current === routeRecipeId) return;
+
+    const recipe = recipes.find((item) => String(item.id) === routeRecipeId);
+    if (recipe) {
+      openedRouteId.current = routeRecipeId;
+      setActiveRecipe(recipe);
+      setScaledServings(recipe.porcja || 2);
+    }
+  }, [routeRecipeId, recipes]);
+
   // Komunikat o powodzeniu znika po kilku sekundach
   useEffect(() => {
     if (!notice) return;
@@ -121,7 +137,8 @@ export default function RecipesPage() {
     if (!activeRecipe) return;
     if (
       !window.confirm(
-              )
+        `Odjąć ze spiżarni składniki na ${scaledServings} porcji przepisu „${activeRecipe.nazwa}”?`
+      )
     ) {
       return;
     }

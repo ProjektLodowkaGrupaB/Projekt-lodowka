@@ -41,9 +41,24 @@ const availableAmount = (stock, skladnikId, wymiar, today) =>
 const isEquipmentReady = (recipe, readyIds) => {
     const main = recipe.sprzet || [];
     const alternative = recipe.sprzet_alternatywny || [];
+    const allReady = (ids) => ids.length > 0 && ids.every((id) => readyIds.has(id));
 
-    return main.every((id) => readyIds.has(id))
-        || (alternative.length > 0 && alternative.every((id) => readyIds.has(id)));
+    return (main.length === 0 && alternative.length === 0)
+        || allReady(main)
+        || allReady(alternative);
+};
+
+// qty ma dwa miejsca po przecinku, więc resztkę 0,996 kg zapisujemy jako 996 g.
+const toStoredAmount = (baseAmount, unit) => {
+    const { wymiar, mnoznik } = UNIT_INFO[unit];
+    const value = baseAmount / mnoznik;
+    const rounded = round2(value);
+
+    if (mnoznik > 1 && Math.abs(rounded - value) > EPSILON) {
+        return { qty: round2(baseAmount), unit_meas: wymiar === 'masa' ? 'g' : 'ml' };
+    }
+
+    return { qty: rounded, unit_meas: unit };
 };
 
 const describeRecipe = (recipe, stock, equipment, today = localDate()) => {
@@ -108,11 +123,14 @@ const planConsumption = (recipe, stock, porcje, today = localDate()) => {
     const aktualizacje = [];
     const usuniete = [];
 
-    for (const id of touched) {
-        const qty = round2(remaining.get(id));
+    for (const product of stock) {
+        if (!touched.has(product.id)) continue;
 
-        if (qty <= 0) usuniete.push(id);
-        else aktualizacje.push({ id, qty });
+        const { mnoznik } = UNIT_INFO[product.unit_meas];
+        const stored = toStoredAmount(remaining.get(product.id) * mnoznik, product.unit_meas);
+
+        if (stored.qty <= 0) usuniete.push(product.id);
+        else aktualizacje.push({ id: product.id, ...stored });
     }
 
     return braki.length > 0

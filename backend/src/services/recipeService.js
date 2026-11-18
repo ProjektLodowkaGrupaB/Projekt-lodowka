@@ -1,13 +1,13 @@
 const recipeRepository = require('../repositories/recipeRepository');
 const equipmentRepository = require('../repositories/equipmentRepository');
 const { describeRecipe, planConsumption } = require('./recipeLogic');
-const { UNITS, DIFFICULTIES, MAX_QTY } = require('../constants');
+const { UNITS, DIFFICULTIES, MIN_QTY, MAX_QTY, MAX_INT } = require('../constants');
 const { httpError, orNotFound } = require('../utils/http');
 
 const NOT_FOUND = 'Nie znaleziono przepisu.';
 const MATCH_LIMIT = 25;
 
-const isPositiveInt = (value) => Number.isInteger(value) && value > 0 && value <= 2147483647;
+const isPositiveInt = (value) => Number.isInteger(value) && value > 0 && value <= MAX_INT;
 const isTextList = (value) => Array.isArray(value)
     && value.every((item) => typeof item === 'string' && item.trim());
 
@@ -34,6 +34,7 @@ const validate = (body) => {
         !DIFFICULTIES.includes(trudnosc) ||
         !Number.isInteger(kalorycznosc) ||
         kalorycznosc < 0 ||
+        kalorycznosc > MAX_INT ||
         !isPositiveInt(porcja) ||
         !Array.isArray(sprzet) ||
         !Array.isArray(sprzet_alternatywny) ||
@@ -54,7 +55,7 @@ const validate = (body) => {
         const qty = Number(s?.qty);
         return !isPositiveInt(s?.skladnik_id)
             || !Number.isFinite(qty)
-            || qty <= 0
+            || qty < MIN_QTY
             || qty > MAX_QTY
             || !UNITS.includes(s?.unit_meas);
     });
@@ -158,7 +159,7 @@ const cook = async (id, body) => {
     }
 
     const plan = await recipeRepository.cook(id, (recipe, stock) =>
-        planConsumption(recipe, stock, porcje ?? recipe.porcja));
+        planConsumption(recipe, stock, porcje ?? recipe.porcja ?? 1));
 
     orNotFound(plan, NOT_FOUND);
 

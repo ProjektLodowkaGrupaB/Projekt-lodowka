@@ -71,11 +71,26 @@ test('skaluje porcje i zużywa najpierw produkt z najkrótszą datą', () => {
 
     assert.deepEqual(plan.braki, []);
     assert.deepEqual(plan.usuniete, [2]);
-    assert.deepEqual(plan.aktualizacje, [{ id: 1, qty: 0.3 }, { id: 3, qty: 0.5 }]);
+    assert.deepEqual(plan.aktualizacje, [{ id: 1, qty: 0.3, unit_meas: 'kg' }, { id: 3, qty: 0.5, unit_meas: 'l' }]);
 });
 
 test('przy braku składnika plan niczego nie zmienia', () => {
     const plan = planConsumption(recipe, [product(1, 1, 1, 'kg')], 2, TODAY);
 
     assert.deepEqual(plan, { braki: ['Mleko'], aktualizacje: [], usuniete: [] });
+});
+
+test('małe zużycie z kg zapisuje dokładną resztę w gramach', () => {
+  const salt = { ...recipe, porcja: 1, skladniki: [{ skladnik_id: 1, nazwa: 'Sól', qty: 4, unit_meas: 'g' }] };
+
+  assert.deepEqual(planConsumption(salt, [product(1, 1, 1, 'kg')], 1, TODAY).aktualizacje, [
+    { id: 1, qty: 996, unit_meas: 'g' }
+  ]);
+});
+
+test('pusta lista sprzętu nie omija niesprawnej alternatywy', () => {
+  const withoutMain = { ...recipe, sprzet: [], sprzet_alternatywny: [2] };
+
+  assert.equal(describeRecipe(withoutMain, [], [equipment(2, false)], TODAY).sprzet_gotowy, false);
+  assert.equal(describeRecipe({ ...recipe, sprzet: [], sprzet_alternatywny: [] }, [], [], TODAY).sprzet_gotowy, true);
 });

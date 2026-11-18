@@ -92,12 +92,16 @@ export const splitRecipeText = (opis: string | null | undefined) => {
 
 export const joinRecipeText = (opisKrotki: string, kroki: string[]) => {
   const cleanSteps = kroki.map((step) => step.trim()).filter(Boolean);
-  const parts = [opisKrotki.trim()];
+  const description = opisKrotki.trim();
+  const parts = [description];
 
   if (cleanSteps.length > 0) {
     parts.push(
       `${STEPS_HEADER}\n${cleanSteps.map((step, index) => `${index + 1}. ${step}`).join('\n')}`
     );
+  } else if (description.includes('\n')) {
+    // Sam nagłówek odróżnia wieloliniowy opis od listy kroków.
+    parts.push(STEPS_HEADER);
   }
 
   return parts.filter(Boolean).join('\n\n') || null;
@@ -118,3 +122,11 @@ export const toSprzet = (sprzet: Sprzet): Sprzet => ({
   kategoria: sprzet.kategoria ?? 'AGD małe',
   notatki: sprzet.notatki ?? ''
 });
+
+/** Liczba pełnych dni do terminu (0 = dziś, wartość ujemna = po terminie). */
+export const dniDoTerminu = (expireDate: string, now = new Date()) => {
+  const [year, month, day] = expireDate.split('-').map(Number);
+  const target = new Date(year, month - 1, day).getTime();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  return Math.round((target - today) / (1000 * 60 * 60 * 24));
+};

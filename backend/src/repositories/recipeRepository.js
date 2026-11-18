@@ -136,8 +136,11 @@ const cook = (id, planConsumption) => withTransaction(async (client) => {
 
     const plan = planConsumption(recipe, stock.rows);
 
-    for (const { id: productId, qty } of plan.aktualizacje) {
-        await client.query('UPDATE spizarnia SET qty = $1 WHERE id = $2', [qty, productId]);
+    for (const { id: productId, qty, unit_meas: unit } of plan.aktualizacje) {
+        await client.query(
+            'UPDATE spizarnia SET qty = $1, unit_meas = $2 WHERE id = $3',
+            [qty, unit, productId]
+        );
     }
 
     if (plan.usuniete.length > 0) {

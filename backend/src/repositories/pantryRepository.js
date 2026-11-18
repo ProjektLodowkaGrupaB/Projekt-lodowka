@@ -40,6 +40,10 @@ const create = (data) => withTransaction(async (client) => {
 });
 
 const update = (id, data) => withTransaction(async (client) => {
+    const existing = await client.query('SELECT id FROM spizarnia WHERE id = $1 FOR UPDATE', [id]);
+
+    if (existing.rowCount === 0) return null;
+
     const skladnikId = await ingredientRepository.findOrCreate(client, data.nazwa, data.unit_meas);
 
     // Brak pola opis w żądaniu zostawia dotychczasowy opis.
