@@ -527,7 +527,7 @@ export default function PantryPage() {
         <div className="p-4 rounded-2xl bg-rose-500/10 border border-rose-500/30 flex flex-col sm:flex-row sm:items-center gap-3">
           <ServerCrash className="w-5 h-5 text-rose-400 shrink-0" />
           <p className="text-sm text-rose-200 flex-1">
-            {errorMessage} Uruchom serwer z katalogu <code>backend/</code> (npm run dev).
+            {errorMessage} Uruchom serwer z katalogu <code>server/</code> (npm run dev).
           </p>
           <button
             onClick={startDemo}
