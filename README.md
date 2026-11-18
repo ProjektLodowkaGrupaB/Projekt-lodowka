@@ -38,6 +38,17 @@ Aplikacja działa pod `http://localhost:5173`. Inny adres API ustawisz w `client
 
 Pliku `.env` nie commitujemy.
 
+## Baza danych
+
+Na czystej bazie PostgreSQL uruchom kolejno:
+
+```bash
+psql "$DATABASE_URL" -f db/schema.sql
+psql "$DATABASE_URL" -f db/seed.sql
+```
+
+`db/seed.sql` dodaje 35 składników, 15 sprzętów, 20 przepisów i 33 produkty w spiżarni. Skrypt można uruchamiać wielokrotnie, a daty ważności liczy od dnia uruchomienia.
+
 ## Testy i kontrola kodu
 
 ```bash
