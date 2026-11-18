@@ -12,17 +12,17 @@ const isValidDate = (value) => {
 };
 
 const validate = (body) => {
-    const { nazwa, ilosc, jednostka, data_waznosci = null, kalorie = null, opis } = body || {};
+    const { nazwa, qty, unit_meas, expire_date = null, kalorie = null, opis } = body || {};
     const errors = [];
 
     if (typeof nazwa !== 'string' || !nazwa.trim() || nazwa.trim().length > 100) {
         errors.push('Nazwa jest wymagana (do 100 znaków).');
     }
-    if (typeof ilosc !== 'number' || !Number.isFinite(ilosc) || ilosc <= 0 || ilosc > MAX_QTY) {
+    if (typeof qty !== 'number' || !Number.isFinite(qty) || qty <= 0 || qty > MAX_QTY) {
         errors.push('Ilość musi być liczbą większą od zera.');
     }
-    if (!UNITS.includes(jednostka)) errors.push('Niepoprawna jednostka.');
-    if (data_waznosci !== null && !isValidDate(data_waznosci)) {
+    if (!UNITS.includes(unit_meas)) errors.push('Niepoprawna jednostka.');
+    if (expire_date !== null && !isValidDate(expire_date)) {
         errors.push('Data ważności musi mieć format RRRR-MM-DD.');
     }
     if (kalorie !== null && (!Number.isInteger(kalorie) || kalorie < 0)) {
@@ -34,7 +34,7 @@ const validate = (body) => {
 
     if (errors.length > 0) throw httpError(400, errors[0], errors);
 
-    return { nazwa: nazwa.trim(), ilosc, jednostka, data_waznosci, kalorie, opis };
+    return { nazwa: nazwa.trim(), qty, unit_meas, expire_date, kalorie, opis };
 };
 
 const getAll = () => pantryRepository.getAll();

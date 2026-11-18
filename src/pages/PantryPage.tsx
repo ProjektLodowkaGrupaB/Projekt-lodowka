@@ -19,9 +19,7 @@ import { UNITS, isValidUnit } from '../constants';
 // ==========================================
 // MODEL DANYCH SPIŻARNI
 // ==========================================
-// Backend (GET /api/spizarnia) zwraca wiersze z tabeli spizarnia + nazwę ze skladniki:
-// { id, nazwa, ilosc, jednostka, data_waznosci, kalorie }.
-// Zapis: POST /api/spizarnia, PUT /api/spizarnia/:id, DELETE /api/spizarnia/:id (SCRUM-38).
+// Pola jak w bazie: GET/POST /api/spizarnia, PUT/DELETE /api/spizarnia/:id.
 
 /** Ile dni przed końcem daty ważności produkt dostaje ostrzeżenie. */
 const SHORT_DATE_DAYS = 3;
@@ -31,41 +29,41 @@ const DAY_MS = 1000 * 60 * 60 * 24;
 type ApiPantryRow = {
   id?: number | string | null;
   nazwa?: string | null;
-  ilosc?: number | string | null;
-  jednostka?: string | null;
-  data_waznosci?: string | null;
+  qty?: number | string | null;
+  unit_meas?: string | null;
+  expire_date?: string | null;
   kalorie?: number | string | null;
 };
 
 export interface PantryItem {
   /** null, gdy backend nie zwraca jeszcze identyfikatora – wtedy edycja/usuwanie są wyłączone. */
   id: number | string | null;
-  name: string;
-  quantity: number;
-  unit: string;
+  nazwa: string;
+  qty: number;
+  unit_meas: string;
   /** Data w formacie RRRR-MM-DD albo null. */
-  expiryDate: string | null;
-  kcal: number | null;
+  expire_date: string | null;
+  kalorie: number | null;
 }
 
 type FormState = {
-  name: string;
+  nazwa: string;
   barcode: string;
-  quantity: string;
-  unit: string;
-  expiryDate: string;
-  kcal: string;
+  qty: string;
+  unit_meas: string;
+  expire_date: string;
+  kalorie: string;
 };
 
 type FormErrors = Partial<Record<keyof FormState, string>>;
 
 const EMPTY_FORM: FormState = {
-  name: '',
+  nazwa: '',
   barcode: '',
-  quantity: '1',
-  unit: 'szt',
-  expiryDate: '',
-  kcal: ''
+  qty: '1',
+  unit_meas: 'szt',
+  expire_date: '',
+  kalorie: ''
 };
 
 // Interfejs dla odpowiedzi z OpenFoodFacts API
@@ -125,49 +123,49 @@ const toNumberOrNull = (value: unknown): number | null => {
 
 const fromApi = (row: ApiPantryRow): PantryItem => ({
   id: row.id ?? null,
-  name: row.nazwa?.trim() || '(bez nazwy)',
-  quantity: toNumberOrNull(row.ilosc) ?? 0,
-  unit: row.jednostka ?? '',
-  expiryDate: normalizeDate(row.data_waznosci),
-  kcal: toNumberOrNull(row.kalorie)
+  nazwa: row.nazwa?.trim() || '(bez nazwy)',
+  qty: toNumberOrNull(row.qty) ?? 0,
+  unit_meas: row.unit_meas ?? '',
+  expire_date: normalizeDate(row.expire_date),
+  kalorie: toNumberOrNull(row.kalorie)
 });
 
 const toForm = (item: PantryItem): FormState => ({
-  name: item.name,
+  nazwa: item.nazwa,
   barcode: '',
-  quantity: String(item.quantity),
-  unit: item.unit || 'szt',
-  expiryDate: item.expiryDate ?? '',
-  kcal: item.kcal === null ? '' : String(item.kcal)
+  qty: String(item.qty),
+  unit_meas: item.unit_meas || 'szt',
+  expire_date: item.expire_date ?? '',
+  kalorie: item.kalorie === null ? '' : String(item.kalorie)
 });
 
 const validate = (form: FormState): FormErrors => {
   const errors: FormErrors = {};
-  const name = form.name.trim();
-  const quantity = Number(form.quantity.replace(',', '.'));
+  const name = form.nazwa.trim();
+  const quantity = Number(form.qty.replace(',', '.'));
 
-  if (!name) errors.name = 'Podaj nazwę produktu.';
-  else if (name.length > 100) errors.name = 'Nazwa może mieć najwyżej 100 znaków.';
+  if (!name) errors.nazwa = 'Podaj nazwę produktu.';
+  else if (name.length > 100) errors.nazwa = 'Nazwa może mieć najwyżej 100 znaków.';
 
-  if (form.quantity.trim() === '' || !Number.isFinite(quantity)) {
-    errors.quantity = 'Podaj ilość.';
+  if (form.qty.trim() === '' || !Number.isFinite(quantity)) {
+    errors.qty = 'Podaj ilość.';
   } else if (quantity <= 0) {
-    errors.quantity = 'Ilość musi być większa od zera.';
+    errors.qty = 'Ilość musi być większa od zera.';
   } else if (quantity >= 100_000_000) {
-    errors.quantity = 'Ilość jest za duża.';
+    errors.qty = 'Ilość jest za duża.';
   }
 
-  if (!isValidUnit(form.unit)) errors.unit = 'Wybierz jednostkę.';
+  if (!isValidUnit(form.unit_meas)) errors.unit_meas = 'Wybierz jednostkę.';
 
-  if (form.kcal.trim() !== '') {
-    const kcal = Number(form.kcal.replace(',', '.'));
+  if (form.kalorie.trim() !== '') {
+    const kcal = Number(form.kalorie.replace(',', '.'));
     if (!Number.isInteger(kcal) || kcal < 0) {
-      errors.kcal = 'Kalorie to liczba całkowita ≥ 0.';
+      errors.kalorie = 'Kalorie to liczba całkowita ≥ 0.';
     }
   }
 
-  if (form.expiryDate && !/^\d{4}-\d{2}-\d{2}$/.test(form.expiryDate)) {
-    errors.expiryDate = 'Nieprawidłowa data.';
+  if (form.expire_date && !/^\d{4}-\d{2}-\d{2}$/.test(form.expire_date)) {
+    errors.expire_date = 'Nieprawidłowa data.';
   }
 
   if (form.barcode && !/^\d{8,14}$/.test(form.barcode.trim())) {
@@ -177,13 +175,13 @@ const validate = (form: FormState): FormErrors => {
   return errors;
 };
 
-/** Dane wysyłane do backendu – nazwy pól jak w odpowiedzi GET. */
+/** Dane wysyłane do backendu – nazwy pól jak w bazie. */
 const toApiPayload = (form: FormState) => ({
-  nazwa: form.name.trim(),
-  ilosc: Number(form.quantity.replace(',', '.')),
-  jednostka: form.unit,
-  data_waznosci: form.expiryDate || null,
-  kalorie: form.kcal.trim() === '' ? null : Number(form.kcal)
+  nazwa: form.nazwa.trim(),
+  qty: Number(form.qty.replace(',', '.')),
+  unit_meas: form.unit_meas,
+  expire_date: form.expire_date || null,
+  kalorie: form.kalorie.trim() === '' ? null : Number(form.kalorie)
 });
 
 /** Przykładowe produkty do pokazu, gdy backend lub baza nie są uruchomione. */
@@ -194,14 +192,14 @@ const buildDemoItems = (): PantryItem[] => {
     return toIsoDate(d);
   };
   return [
-    { id: 'demo-1', name: 'Mleko 3,2%', quantity: 1, unit: 'l', expiryDate: inDays(2), kcal: 60 },
-    { id: 'demo-2', name: 'Jajka', quantity: 10, unit: 'szt', expiryDate: inDays(12), kcal: 143 },
-    { id: 'demo-3', name: 'Mąka pszenna', quantity: 1, unit: 'kg', expiryDate: inDays(180), kcal: 348 },
-    { id: 'demo-4', name: 'Jogurt naturalny', quantity: 2, unit: 'szt', expiryDate: inDays(-1), kcal: 61 },
-    { id: 'demo-5', name: 'Pomidory', quantity: 500, unit: 'g', expiryDate: inDays(4), kcal: 18 },
-    { id: 'demo-6', name: 'Makaron spaghetti', quantity: 2, unit: 'opak.', expiryDate: inDays(300), kcal: 357 },
-    { id: 'demo-7', name: 'Masło', quantity: 200, unit: 'g', expiryDate: inDays(0), kcal: 735 },
-    { id: 'demo-8', name: 'Ryż basmati', quantity: 1, unit: 'kg', expiryDate: null, kcal: null }
+    { id: 'demo-1', nazwa: 'Mleko 3,2%', qty: 1, unit_meas: 'l', expire_date: inDays(2), kalorie: 60 },
+    { id: 'demo-2', nazwa: 'Jajka', qty: 10, unit_meas: 'szt', expire_date: inDays(12), kalorie: 143 },
+    { id: 'demo-3', nazwa: 'Mąka pszenna', qty: 1, unit_meas: 'kg', expire_date: inDays(180), kalorie: 348 },
+    { id: 'demo-4', nazwa: 'Jogurt naturalny', qty: 2, unit_meas: 'szt', expire_date: inDays(-1), kalorie: 61 },
+    { id: 'demo-5', nazwa: 'Pomidory', qty: 500, unit_meas: 'g', expire_date: inDays(4), kalorie: 18 },
+    { id: 'demo-6', nazwa: 'Makaron spaghetti', qty: 2, unit_meas: 'opak.', expire_date: inDays(300), kalorie: 357 },
+    { id: 'demo-7', nazwa: 'Masło', qty: 200, unit_meas: 'g', expire_date: inDays(0), kalorie: 735 },
+    { id: 'demo-8', nazwa: 'Ryż basmati', qty: 1, unit_meas: 'kg', expire_date: null, kalorie: null }
   ];
 };
 
@@ -294,7 +292,7 @@ export default function PantryPage() {
   // Obsługa API zewnętrznego - OpenFoodFacts (wyszukiwanie produktu po EAN lub nazwie)
   const searchOpenFoodFacts = async () => {
     const barcode = formData.barcode.trim();
-    const name = formData.name.trim();
+    const name = formData.nazwa.trim();
     if (!barcode && !name) return;
 
     setIsSearchingOFF(true);
@@ -317,9 +315,9 @@ export default function PantryPage() {
         const kcal = product.nutriments?.['energy-kcal_100g'];
         setFormData((prev) => ({
           ...prev,
-          name: product.product_name?.trim() || prev.name,
+          nazwa: product.product_name?.trim() || prev.nazwa,
           barcode: product.code || prev.barcode,
-          kcal: typeof kcal === 'number' ? String(Math.round(kcal)) : prev.kcal
+          kalorie: typeof kcal === 'number' ? String(Math.round(kcal)) : prev.kalorie
         }));
         setFormErrors({});
         setOffMessage('Uzupełniono dane z OpenFoodFacts – sprawdź je przed zapisem.');
@@ -347,11 +345,11 @@ export default function PantryPage() {
     if (demoMode) {
       const saved: PantryItem = {
         id: editingItem?.id ?? `demo-${Date.now()}`,
-        name: payload.nazwa,
-        quantity: payload.ilosc,
-        unit: payload.jednostka,
-        expiryDate: payload.data_waznosci,
-        kcal: payload.kalorie
+        nazwa: payload.nazwa,
+        qty: payload.qty,
+        unit_meas: payload.unit_meas,
+        expire_date: payload.expire_date,
+        kalorie: payload.kalorie
       };
       setPantryItems((prev) =>
         editingItem ? prev.map((it) => (it.id === editingItem.id ? saved : it)) : [...prev, saved]
@@ -385,7 +383,7 @@ export default function PantryPage() {
   // Usuwanie produktu (DELETE)
   const handleDeleteProduct = async (item: PantryItem) => {
     if (item.id === null) return;
-    if (!window.confirm(`Usunąć „${item.name}” ze spiżarni?`)) return;
+    if (!window.confirm(`Usunąć „${item.nazwa}” ze spiżarni?`)) return;
 
     if (!demoMode) {
       try {
@@ -431,7 +429,7 @@ export default function PantryPage() {
 
     return pantryItems
       .map((item) => {
-        const days = daysUntil(item.expiryDate, today);
+        const days = daysUntil(item.expire_date, today);
         return {
           item,
           days,
@@ -440,20 +438,20 @@ export default function PantryPage() {
         };
       })
       .filter(({ item, isExpired, isShortDate }) => {
-        if (query && !item.name.toLowerCase().includes(query)) return false;
+        if (query && !item.nazwa.toLowerCase().includes(query)) return false;
         if (filterType === 'expired') return isExpired;
         if (filterType === 'short_date') return isShortDate;
         return true;
       })
       // Najpierw przeterminowane, potem krótkie daty, na końcu produkty bez daty
-      .sort((a, b) => a.days - b.days || a.item.name.localeCompare(b.item.name, 'pl'));
+      .sort((a, b) => a.days - b.days || a.item.nazwa.localeCompare(b.item.nazwa, 'pl'));
   }, [pantryItems, searchQuery, filterType, today]);
 
   const counts = useMemo(() => {
     let expired = 0;
     let shortDate = 0;
     for (const item of pantryItems) {
-      const days = daysUntil(item.expiryDate, today);
+      const days = daysUntil(item.expire_date, today);
       if (days < 0) expired++;
       else if (days <= SHORT_DATE_DAYS) shortDate++;
     }
@@ -647,9 +645,9 @@ export default function PantryPage() {
                       className={`font-semibold truncate ${
                         isExpired ? 'text-rose-400 line-through' : 'text-white'
                       }`}
-                      title={item.name}
+                      title={item.nazwa}
                     >
-                      {item.name}
+                      {item.nazwa}
                     </h4>
                     {(isExpired || isShortDate) && (
                       <span
@@ -675,13 +673,13 @@ export default function PantryPage() {
                     <p className="text-slate-400 flex justify-between gap-2">
                       <span>Ilość:</span>
                       <span className="font-medium text-slate-200">
-                        {item.quantity.toLocaleString('pl-PL')} {item.unit}
+                        {item.qty.toLocaleString('pl-PL')} {item.unit_meas}
                       </span>
                     </p>
-                    {item.kcal !== null && item.kcal > 0 && (
+                    {item.kalorie !== null && item.kalorie > 0 && (
                       <p className="text-slate-400 flex justify-between gap-2">
                         <span>Kalorie:</span>
-                        <span className="font-medium text-slate-200">{item.kcal} kcal/100 g</span>
+                        <span className="font-medium text-slate-200">{item.kalorie} kcal/100 g</span>
                       </p>
                     )}
                     <p
@@ -695,7 +693,7 @@ export default function PantryPage() {
                     >
                       <span>Data ważności:</span>
                       <span className="font-medium">
-                        {item.expiryDate ? formatDate(item.expiryDate) : '—'}
+                        {item.expire_date ? formatDate(item.expire_date) : '—'}
                       </span>
                     </p>
                   </div>
@@ -708,7 +706,7 @@ export default function PantryPage() {
                     disabled={!canModify}
                     className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 transition disabled:opacity-40 disabled:cursor-not-allowed"
                     title={canModify ? 'Edytuj produkt' : 'Brak identyfikatora produktu z API'}
-                    aria-label={`Edytuj ${item.name}`}
+                    aria-label={`Edytuj ${item.nazwa}`}
                   >
                     <Edit2 className="w-4 h-4" />
                   </button>
@@ -717,7 +715,7 @@ export default function PantryPage() {
                     disabled={!canModify}
                     className="p-2 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 transition disabled:opacity-40 disabled:cursor-not-allowed"
                     title={canModify ? 'Usuń ze spiżarni' : 'Brak identyfikatora produktu z API'}
-                    aria-label={`Usuń ${item.name}`}
+                    aria-label={`Usuń ${item.nazwa}`}
                   >
                     <Trash2 className="w-4 h-4" />
                   </button>
@@ -766,13 +764,13 @@ export default function PantryPage() {
                   type="text"
                   autoFocus
                   maxLength={100}
-                  value={formData.name}
-                  onChange={(e) => updateField('name', e.target.value)}
+                  value={formData.nazwa}
+                  onChange={(e) => updateField('nazwa', e.target.value)}
                   placeholder="np. Mleko 3,2%"
-                  aria-invalid={Boolean(formErrors.name)}
-                  className={inputClass(Boolean(formErrors.name))}
+                  aria-invalid={Boolean(formErrors.nazwa)}
+                  className={inputClass(Boolean(formErrors.nazwa))}
                 />
-                {formErrors.name && <p className="text-xs text-rose-400">{formErrors.name}</p>}
+                {formErrors.nazwa && <p className="text-xs text-rose-400">{formErrors.nazwa}</p>}
               </div>
 
               {/* Integracja OpenFoodFacts */}
@@ -794,7 +792,7 @@ export default function PantryPage() {
                   <button
                     type="button"
                     onClick={searchOpenFoodFacts}
-                    disabled={isSearchingOFF || (!formData.name.trim() && !formData.barcode.trim())}
+                    disabled={isSearchingOFF || (!formData.nazwa.trim() && !formData.barcode.trim())}
                     className="px-3 py-2 bg-slate-800 hover:bg-slate-700 rounded-xl text-emerald-400 text-sm font-medium transition flex items-center gap-2 disabled:opacity-50 shrink-0"
                   >
                     {isSearchingOFF ? (
@@ -825,13 +823,13 @@ export default function PantryPage() {
                     type="number"
                     min="0.01"
                     step="0.01"
-                    value={formData.quantity}
-                    onChange={(e) => updateField('quantity', e.target.value)}
-                    aria-invalid={Boolean(formErrors.quantity)}
-                    className={inputClass(Boolean(formErrors.quantity))}
+                    value={formData.qty}
+                    onChange={(e) => updateField('qty', e.target.value)}
+                    aria-invalid={Boolean(formErrors.qty)}
+                    className={inputClass(Boolean(formErrors.qty))}
                   />
-                  {formErrors.quantity && (
-                    <p className="text-xs text-rose-400">{formErrors.quantity}</p>
+                  {formErrors.qty && (
+                    <p className="text-xs text-rose-400">{formErrors.qty}</p>
                   )}
                 </div>
                 <div className="space-y-1">
@@ -840,10 +838,10 @@ export default function PantryPage() {
                   </label>
                   <select
                     id="pantry-unit"
-                    value={formData.unit}
-                    onChange={(e) => updateField('unit', e.target.value)}
-                    aria-invalid={Boolean(formErrors.unit)}
-                    className={inputClass(Boolean(formErrors.unit))}
+                    value={formData.unit_meas}
+                    onChange={(e) => updateField('unit_meas', e.target.value)}
+                    aria-invalid={Boolean(formErrors.unit_meas)}
+                    className={inputClass(Boolean(formErrors.unit_meas))}
                   >
                     {UNITS.map((u) => (
                       <option key={u.value} value={u.value}>
@@ -851,7 +849,7 @@ export default function PantryPage() {
                       </option>
                     ))}
                   </select>
-                  {formErrors.unit && <p className="text-xs text-rose-400">{formErrors.unit}</p>}
+                  {formErrors.unit_meas && <p className="text-xs text-rose-400">{formErrors.unit_meas}</p>}
                 </div>
               </div>
 
@@ -865,13 +863,13 @@ export default function PantryPage() {
                     type="number"
                     min="0"
                     step="1"
-                    value={formData.kcal}
-                    onChange={(e) => updateField('kcal', e.target.value)}
+                    value={formData.kalorie}
+                    onChange={(e) => updateField('kalorie', e.target.value)}
                     placeholder="Opcjonalnie"
-                    aria-invalid={Boolean(formErrors.kcal)}
-                    className={inputClass(Boolean(formErrors.kcal))}
+                    aria-invalid={Boolean(formErrors.kalorie)}
+                    className={inputClass(Boolean(formErrors.kalorie))}
                   />
-                  {formErrors.kcal && <p className="text-xs text-rose-400">{formErrors.kcal}</p>}
+                  {formErrors.kalorie && <p className="text-xs text-rose-400">{formErrors.kalorie}</p>}
                 </div>
                 <div className="space-y-1">
                   <label htmlFor="pantry-date" className="text-xs font-medium text-slate-400">
@@ -880,13 +878,13 @@ export default function PantryPage() {
                   <input
                     id="pantry-date"
                     type="date"
-                    value={formData.expiryDate}
-                    onChange={(e) => updateField('expiryDate', e.target.value)}
-                    aria-invalid={Boolean(formErrors.expiryDate)}
-                    className={`${inputClass(Boolean(formErrors.expiryDate))} [color-scheme:dark]`}
+                    value={formData.expire_date}
+                    onChange={(e) => updateField('expire_date', e.target.value)}
+                    aria-invalid={Boolean(formErrors.expire_date)}
+                    className={`${inputClass(Boolean(formErrors.expire_date))} [color-scheme:dark]`}
                   />
-                  {formErrors.expiryDate && (
-                    <p className="text-xs text-rose-400">{formErrors.expiryDate}</p>
+                  {formErrors.expire_date && (
+                    <p className="text-xs text-rose-400">{formErrors.expire_date}</p>
                   )}
                 </div>
               </div>

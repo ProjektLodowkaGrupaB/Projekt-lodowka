@@ -9,7 +9,7 @@ import {
   isValidUnit,
   type Difficulty
 } from '../constants';
-import { joinRecipeText, splitRecipeText, type ApiRecipe } from '../mappers';
+import { joinRecipeText, splitRecipeText, type Przepis, type Skladnik, type Sprzet } from '../model';
 
 // ==========================================
 // FORMULARZ DODAWANIA / EDYCJI PRZEPISU (SCRUM-41)
@@ -21,9 +21,6 @@ import { joinRecipeText, splitRecipeText, type ApiRecipe } from '../mappers';
 //   skladniki: [{ skladnik_id, qty, unit_meas }]
 // }
 // Słowniki do list wyboru: GET /api/skladniki i GET /api/sprzet.
-
-type Ingredient = { id: number; nazwa: string; domyslna_jednostka?: string | null };
-type Equipment = { id: number; nazwa: string; sprawny?: boolean | null };
 
 type IngredientRow = { key: number; name: string; qty: string; unit: string };
 
@@ -38,20 +35,27 @@ type FormErrors = {
 };
 
 type Props = {
-  initial: ApiRecipe | null;
+  initial: Przepis | null;
   onClose: () => void;
   onSaved: (message: string) => void;
 };
 
 /** Przykładowe słowniki, gdy backend nie udostępnia jeszcze /skladniki i /sprzet. */
-const DEMO_INGREDIENTS: Ingredient[] = [
+const DEMO_INGREDIENTS: Skladnik[] = [
   'Makaron spaghetti', 'Pomidory', 'Czosnek', 'Cebula', 'Oliwa', 'Jajka', 'Mleko',
   'Mąka pszenna', 'Masło', 'Ser żółty', 'Szpinak', 'Ryż basmati', 'Pierś z kurczaka', 'Sól', 'Pieprz'
 ].map((nazwa, i) => ({ id: i + 1, nazwa, domyslna_jednostka: null }));
 
-const DEMO_EQUIPMENT: Equipment[] = [
+const DEMO_EQUIPMENT: Sprzet[] = [
   'Piekarnik', 'Patelnia', 'Garnek', 'Blender', 'Mikser', 'Mikrofalówka'
-].map((nazwa, i) => ({ id: i + 1, nazwa, sprawny: true }));
+].map((nazwa, i) => ({
+  id: i + 1,
+  nazwa,
+  sprawny: true,
+  kategoria: 'AGD małe',
+  status_opis: 'gotowy',
+  notatki: ''
+}));
 
 let rowKey = 0;
 const newRow = (partial: Partial<IngredientRow> = {}): IngredientRow => ({
@@ -79,8 +83,8 @@ export default function RecipeFormModal({ initial, onClose, onSaved }: Props) {
   const initialText = splitRecipeText(initial?.opis);
 
   // Słowniki z bazy
-  const [ingredients, setIngredients] = useState<Ingredient[]>([]);
-  const [equipment, setEquipment] = useState<Equipment[]>([]);
+  const [ingredients, setIngredients] = useState<Skladnik[]>([]);
+  const [equipment, setEquipment] = useState<Sprzet[]>([]);
   const [dictLoading, setDictLoading] = useState(true);
   const [demoMode, setDemoMode] = useState(false);
 
@@ -96,9 +100,9 @@ export default function RecipeFormModal({ initial, onClose, onSaved }: Props) {
   const [kalorycznosc, setKalorycznosc] = useState(
     initial?.kalorycznosc != null ? String(initial.kalorycznosc) : ''
   );
-  const [description, setDescription] = useState(initialText.description);
+  const [description, setDescription] = useState(initialText.opis_krotki);
   const [steps, setSteps] = useState<string[]>(
-    initialText.steps.length > 0 ? initialText.steps : ['']
+    initialText.kroki.length > 0 ? initialText.kroki : ['']
   );
   const [selectedEquipment, setSelectedEquipment] = useState<number[]>(initial?.sprzet ?? []);
   const [selectedDiets, setSelectedDiets] = useState<string[]>(initial?.diety ?? []);
@@ -115,8 +119,8 @@ export default function RecipeFormModal({ initial, onClose, onSaved }: Props) {
     let cancelled = false;
 
     Promise.allSettled([
-      apiFetch<Ingredient[]>('/skladniki'),
-      apiFetch<Equipment[]>('/sprzet')
+      apiFetch<Skladnik[]>('/skladniki'),
+      apiFetch<Sprzet[]>('/sprzet')
     ]).then(([ing, eq]) => {
       if (cancelled) return;
       const ok = ing.status === 'fulfilled' && Array.isArray(ing.value);
@@ -158,7 +162,7 @@ export default function RecipeFormModal({ initial, onClose, onSaved }: Props) {
   }, [onClose]);
 
   const ingredientByName = useMemo(() => {
-    const map = new Map<string, Ingredient>();
+    const map = new Map<string, Skladnik>();
     for (const i of ingredients) map.set(i.nazwa.trim().toLowerCase(), i);
     return map;
   }, [ingredients]);

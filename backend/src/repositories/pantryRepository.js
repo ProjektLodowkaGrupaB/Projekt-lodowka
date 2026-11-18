@@ -7,9 +7,9 @@ const SELECT_PRODUCT = `
     SELECT
         p.id,
         s.nazwa,
-        p.qty AS ilosc,
-        p.unit_meas AS jednostka,
-        p.expire_date AS data_waznosci,
+        p.qty,
+        p.unit_meas,
+        p.expire_date,
         p.kalorie,
         p.opis
     FROM spizarnia p
@@ -27,20 +27,20 @@ const getById = async (id, db = pool) => {
 };
 
 const create = (data) => withTransaction(async (client) => {
-    const skladnikId = await ingredientRepository.findOrCreate(client, data.nazwa, data.jednostka);
+    const skladnikId = await ingredientRepository.findOrCreate(client, data.nazwa, data.unit_meas);
 
     const result = await client.query(
         `INSERT INTO spizarnia (skladnik_id, opis, qty, unit_meas, expire_date, kalorie)
          VALUES ($1, $2, $3, $4, $5, $6)
          RETURNING id`,
-        [skladnikId, data.opis ?? null, data.ilosc, data.jednostka, data.data_waznosci, data.kalorie]
+        [skladnikId, data.opis ?? null, data.qty, data.unit_meas, data.expire_date, data.kalorie]
     );
 
     return getById(result.rows[0].id, client);
 });
 
 const update = (id, data) => withTransaction(async (client) => {
-    const skladnikId = await ingredientRepository.findOrCreate(client, data.nazwa, data.jednostka);
+    const skladnikId = await ingredientRepository.findOrCreate(client, data.nazwa, data.unit_meas);
 
     // Brak pola opis w żądaniu zostawia dotychczasowy opis.
     const result = await client.query(
@@ -57,9 +57,9 @@ const update = (id, data) => withTransaction(async (client) => {
             skladnikId,
             data.opis !== undefined,
             data.opis ?? null,
-            data.ilosc,
-            data.jednostka,
-            data.data_waznosci,
+            data.qty,
+            data.unit_meas,
+            data.expire_date,
             data.kalorie,
             id
         ]

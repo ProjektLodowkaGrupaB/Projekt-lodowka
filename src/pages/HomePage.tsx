@@ -23,49 +23,20 @@ import {
 
 import { API_BASE_URL } from '../api';
 import {
-  fromApiEquipment,
-  fromApiPantryProduct,
-  fromApiRecipe,
-  type ApiEquipment,
-  type ApiPantryProduct,
-  type ApiRecipe
-} from '../mappers';
-
-export interface PantryItem {
-  id: number | string;
-  name: string;
-  category?: string;
-  quantity: number;
-  unit: string;
-  expiryDate?: string | null;
-  kcalPer100g?: number;
-}
-
-export interface Recipe {
-  id: number | string;
-  title: string;
-  prepTime?: number;
-  kcalPerServing?: number;
-  servings?: number;
-  isFavorite?: boolean;
-  missingPercentage: number;
-  missingIngredients?: string[];
-  dietTags?: string[];
-}
-
-export interface EquipmentItem {
-  id: number | string;
-  name: string;
-  category?: string;
-  status: string;
-}
+  toPrzepis,
+  toSprzet,
+  type Przepis as Recipe,
+  type PrzepisApi,
+  type SpizarniaProdukt as PantryItem,
+  type Sprzet as EquipmentItem
+} from '../model';
 
 export interface AIRecommendation {
   id: number | string;
-  title: string;
+  nazwa: string;
   reason?: string;
-  prepTime?: number;
-  kcalPerServing?: number;
+  czas?: number;
+  kalorycznosc?: number;
 }
 
 export default function HomePage() {
@@ -117,14 +88,14 @@ export default function HomePage() {
 
     try {
       const [pantryData, recipesData, equipmentData] = await Promise.all([
-        fetchJson<ApiPantryProduct[]>('/spizarnia', controller.signal),
-        fetchJson<ApiRecipe[]>('/przepisy/dopasowane', controller.signal),
-        fetchJson<ApiEquipment[]>('/sprzet', controller.signal)
+        fetchJson<PantryItem[]>('/spizarnia', controller.signal),
+        fetchJson<PrzepisApi[]>('/przepisy/dopasowane', controller.signal),
+        fetchJson<EquipmentItem[]>('/sprzet', controller.signal)
       ]);
 
-      setPantryItems(pantryData.map(fromApiPantryProduct));
-      setRecipes(recipesData.map(fromApiRecipe));
-      setEquipment(equipmentData.map(fromApiEquipment));
+      setPantryItems(pantryData);
+      setRecipes(recipesData.map(toPrzepis));
+      setEquipment(equipmentData.map(toSprzet));
       // Rekomendacje AI nie mają jeszcze backendu – panel pokazuje stan pusty.
       setAiRecommendations([]);
       setDbConnected(true);
@@ -154,31 +125,31 @@ export default function HomePage() {
     const now = new Date();
 
     const expiredItems = pantryItems.filter((item) => {
-      if (!item.expiryDate) return false;
-      return new Date(item.expiryDate).getTime() < now.getTime();
+      if (!item.expire_date) return false;
+      return new Date(item.expire_date).getTime() < now.getTime();
     });
 
     const expiringSoonItems = pantryItems.filter((item) => {
-      if (!item.expiryDate) return false;
+      if (!item.expire_date) return false;
       const diffDays =
-        (new Date(item.expiryDate).getTime() - now.getTime()) / (1000 * 60 * 60 * 24);
+        (new Date(item.expire_date).getTime() - now.getTime()) / (1000 * 60 * 60 * 24);
       return diffDays >= 0 && diffDays <= 3;
     });
 
     const fullMatchRecipes = recipes.filter(
-      (r) => (r.missingPercentage ?? 0) === 0
+      (r) => (r.procent_brakow ?? 0) === 0
     );
 
     const partialMatchRecipes = recipes.filter(
-      (r) => (r.missingPercentage ?? 0) > 0 && (r.missingPercentage ?? 0) <= 25
+      (r) => (r.procent_brakow ?? 0) > 0 && (r.procent_brakow ?? 0) <= 25
     );
 
     const readyEquipment = equipment.filter(
-      (e) => e.status === 'gotowy' || e.status === 'ready'
+      (e) => e.status_opis === 'gotowy' || e.status_opis === 'ready'
     );
 
     const repairEquipment = equipment.filter(
-      (e) => e.status === 'w naprawie' || e.status === 'repair'
+      (e) => e.status_opis === 'w naprawie' || e.status_opis === 'repair'
     );
 
     return {
@@ -197,9 +168,9 @@ export default function HomePage() {
     return recipes.filter((recipe) => {
       const matchesSearch =
         !searchQuery.trim() ||
-        recipe.title.toLowerCase().includes(searchQuery.toLowerCase());
+        recipe.nazwa.toLowerCase().includes(searchQuery.toLowerCase());
 
-      const missing = recipe.missingPercentage ?? 0;
+      const missing = recipe.procent_brakow ?? 0;
       const matchesLevel =
         matchFilter === 'all'
           ? missing <= 25
@@ -216,14 +187,14 @@ export default function HomePage() {
     const now = new Date();
     return pantryItems
       .filter((item) => {
-        if (!item.expiryDate) return false;
+        if (!item.expire_date) return false;
         const diffDays =
-          (new Date(item.expiryDate).getTime() - now.getTime()) / (1000 * 60 * 60 * 24);
+          (new Date(item.expire_date).getTime() - now.getTime()) / (1000 * 60 * 60 * 24);
         return diffDays <= 3;
       })
       .sort((a, b) => {
-        const dateA = a.expiryDate ? new Date(a.expiryDate).getTime() : 0;
-        const dateB = b.expiryDate ? new Date(b.expiryDate).getTime() : 0;
+        const dateA = a.expire_date ? new Date(a.expire_date).getTime() : 0;
+        const dateB = b.expire_date ? new Date(b.expire_date).getTime() : 0;
         return dateA - dateB;
       });
   }, [pantryItems]);
@@ -463,7 +434,7 @@ export default function HomePage() {
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {filteredRecipes.map((recipe) => {
-                const isFullMatch = (recipe.missingPercentage ?? 0) === 0;
+                const isFullMatch = (recipe.procent_brakow ?? 0) === 0;
                 return (
                   <a
                     key={recipe.id}
@@ -481,29 +452,29 @@ export default function HomePage() {
                         >
                           {isFullMatch
                             ? '100% składników w spiżarni'
-                            : `Brakuje ${recipe.missingPercentage}% składników`}
+                            : `Brakuje ${recipe.procent_brakow}% składników`}
                         </span>
-                        {recipe.prepTime && (
+                        {recipe.czas && (
                           <span className="text-xs text-slate-400 flex items-center gap-1">
                             <Clock className="w-3.5 h-3.5" />
-                            {recipe.prepTime} min
+                            {recipe.czas} min
                           </span>
                         )}
                       </div>
 
                       <h4 className="font-semibold text-white group-hover:text-emerald-400 transition">
-                        {recipe.title}
+                        {recipe.nazwa}
                       </h4>
 
                       {!isFullMatch &&
-                        recipe.missingIngredients &&
-                        recipe.missingIngredients.length > 0 && (
+                        recipe.brakujace &&
+                        recipe.brakujace.length > 0 && (
                           <div className="pt-1">
                             <p className="text-[11px] text-slate-400 mb-1">
                               Brakujące produkty:
                             </p>
                             <div className="flex flex-wrap gap-1.5">
-                              {recipe.missingIngredients.map((m: string, idx: number) => (
+                              {recipe.brakujace.map((m: string, idx: number) => (
                                 <span
                                   key={idx}
                                   className="text-[11px] px-2 py-0.5 rounded-md bg-rose-500/10 text-rose-300 border border-rose-500/20"
@@ -519,8 +490,8 @@ export default function HomePage() {
                     <div className="pt-3 border-t border-slate-900 flex items-center justify-between text-xs text-slate-400">
                       <span className="flex items-center gap-1">
                         <Flame className="w-3.5 h-3.5 text-orange-400" />
-                        {recipe.kcalPerServing
-                          ? `${recipe.kcalPerServing} kcal / porcja`
+                        {recipe.kalorycznosc
+                          ? `${recipe.kalorycznosc} kcal / porcja`
                           : 'Brak danych kcal'}
                       </span>
                       <span className="inline-flex items-center gap-1 text-emerald-400 font-medium">
@@ -570,7 +541,7 @@ export default function HomePage() {
                     className="block p-3.5 rounded-xl bg-slate-950 border border-slate-800 hover:border-emerald-500/40 transition space-y-1.5"
                   >
                     <div className="flex items-center justify-between">
-                      <h4 className="text-sm font-medium text-white">{rec.title}</h4>
+                      <h4 className="text-sm font-medium text-white">{rec.nazwa}</h4>
                       <ChevronRight className="w-4 h-4 text-slate-500" />
                     </div>
                     {rec.reason && (
@@ -614,8 +585,8 @@ export default function HomePage() {
             ) : (
               <div className="space-y-2.5">
                 {urgentPantryItems.map((item) => {
-                  const isExpired = item.expiryDate
-                    ? new Date(item.expiryDate).getTime() < new Date().getTime()
+                  const isExpired = item.expire_date
+                    ? new Date(item.expire_date).getTime() < new Date().getTime()
                     : false;
 
                   return (
@@ -631,10 +602,10 @@ export default function HomePage() {
                               : 'text-amber-300'
                           }`}
                         >
-                          {item.name}
+                          {item.nazwa}
                         </p>
                         <p className="text-[11px] text-slate-400">
-                          {item.quantity} {item.unit} • Ważne do: {item.expiryDate}
+                          {item.qty} {item.unit_meas} • Ważne do: {item.expire_date}
                         </p>
                       </div>
                       <span

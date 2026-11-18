@@ -19,17 +19,11 @@ import {
 // KONFIGURACJA WARSTWY KOMUNIKACJI HTTP/JSON
 // ==========================================
 import { apiFetch, ApiError } from '../api';
-import { fromApiEquipment, type ApiEquipment } from '../mappers';
+import { toSprzet, type Sprzet } from '../model';
 
 export type EquipmentStatus = 'gotowy' | 'w naprawie' | 'niedostępny';
 
-export interface EquipmentItem {
-  id: number | string;
-  name: string;
-  category: string;
-  status: EquipmentStatus;
-  notes?: string;
-}
+export type EquipmentItem = Sprzet & { status_opis: EquipmentStatus };
 
 const EQUIPMENT_CATEGORIES = [
   'AGD duże',
@@ -55,15 +49,15 @@ export default function EquipmentPage() {
   const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
   const [editingItem, setEditingItem] = useState<EquipmentItem | null>(null);
   const [formData, setFormData] = useState<{
-    name: string;
-    category: string;
-    status: EquipmentStatus;
-    notes: string;
+    nazwa: string;
+    kategoria: string;
+    status_opis: EquipmentStatus;
+    notatki: string;
   }>({
-    name: '',
-    category: 'AGD małe',
-    status: 'gotowy',
-    notes: ''
+    nazwa: '',
+    kategoria: 'AGD małe',
+    status_opis: 'gotowy',
+    notatki: ''
   });
 
   // Pobieranie listy wyposażenia z backendu Node.js
@@ -72,8 +66,8 @@ export default function EquipmentPage() {
     setErrorMessage(null);
 
     try {
-      const data = await apiFetch<ApiEquipment[]>('/sprzet');
-      setEquipmentList(data.map(fromApiEquipment) as EquipmentItem[]);
+      const data = await apiFetch<Sprzet[]>('/sprzet');
+      setEquipmentList(data.map(toSprzet) as EquipmentItem[]);
       setDbConnected(true);
     } catch (err: unknown) {
       setDbConnected(false);
@@ -92,10 +86,10 @@ export default function EquipmentPage() {
 
   // Podsumowanie stanu wyposażenia kuchni
   const stats = useMemo(() => {
-    const readyCount = equipmentList.filter((item) => item.status === 'gotowy').length;
-    const repairCount = equipmentList.filter((item) => item.status === 'w naprawie').length;
+    const readyCount = equipmentList.filter((item) => item.status_opis === 'gotowy').length;
+    const repairCount = equipmentList.filter((item) => item.status_opis === 'w naprawie').length;
     const unavailableCount = equipmentList.filter(
-      (item) => item.status === 'niedostępny'
+      (item) => item.status_opis === 'niedostępny'
     ).length;
 
     return {
@@ -111,16 +105,16 @@ export default function EquipmentPage() {
     return equipmentList.filter((item) => {
       if (
         searchQuery.trim() &&
-        !item.name.toLowerCase().includes(searchQuery.toLowerCase())
+        !item.nazwa.toLowerCase().includes(searchQuery.toLowerCase())
       ) {
         return false;
       }
 
-      if (statusFilter !== 'all' && item.status !== statusFilter) {
+      if (statusFilter !== 'all' && item.status_opis !== statusFilter) {
         return false;
       }
 
-      if (categoryFilter !== 'all' && item.category !== categoryFilter) {
+      if (categoryFilter !== 'all' && item.kategoria !== categoryFilter) {
         return false;
       }
 
@@ -133,18 +127,18 @@ export default function EquipmentPage() {
     if (item) {
       setEditingItem(item);
       setFormData({
-        name: item.name,
-        category: item.category || 'AGD małe',
-        status: item.status || 'gotowy',
-        notes: item.notes || ''
+        nazwa: item.nazwa,
+        kategoria: item.kategoria || 'AGD małe',
+        status_opis: item.status_opis || 'gotowy',
+        notatki: item.notatki || ''
       });
     } else {
       setEditingItem(null);
       setFormData({
-        name: '',
-        category: 'AGD małe',
-        status: 'gotowy',
-        notes: ''
+        nazwa: '',
+        kategoria: 'AGD małe',
+        status_opis: 'gotowy',
+        notatki: ''
       });
     }
     setIsModalOpen(true);
@@ -158,17 +152,12 @@ export default function EquipmentPage() {
   // Zapis nowego lub edytowanego wyposażenia w bazie danych (POST / PUT)
   const handleSaveEquipment = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.name.trim()) return;
+    if (!formData.nazwa.trim()) return;
 
     try {
       await apiFetch(editingItem ? `/sprzet/${editingItem.id}` : '/sprzet', {
         method: editingItem ? 'PUT' : 'POST',
-        body: JSON.stringify({
-          nazwa: formData.name,
-          kategoria: formData.category,
-          status: formData.status,
-          notatki: formData.notes
-        })
+        body: JSON.stringify(formData)
       });
 
       await loadEquipmentData();
@@ -183,16 +172,16 @@ export default function EquipmentPage() {
     item: EquipmentItem,
     newStatus: EquipmentStatus
   ) => {
-    if (item.status === newStatus) return;
+    if (item.status_opis === newStatus) return;
 
     try {
       await apiFetch(`/sprzet/${item.id}/status`, {
         method: 'PATCH',
-        body: JSON.stringify({ status: newStatus })
+        body: JSON.stringify({ status_opis: newStatus })
       });
 
       setEquipmentList((prev) =>
-        prev.map((eq) => (eq.id === item.id ? { ...eq, status: newStatus } : eq))
+        prev.map((eq) => (eq.id === item.id ? { ...eq, status_opis: newStatus } : eq))
       );
     } catch {
       alert('Nie udało się zmienić statusu sprzętu (sprawdź połączenie z API).');
@@ -404,8 +393,8 @@ export default function EquipmentPage() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {filteredEquipment.map((item) => {
-            const isReady = item.status === 'gotowy';
-            const isRepair = item.status === 'w naprawie';
+            const isReady = item.status_opis === 'gotowy';
+            const isRepair = item.status_opis === 'w naprawie';
 
             return (
               <div
@@ -416,10 +405,10 @@ export default function EquipmentPage() {
                   <div className="flex items-start justify-between gap-2">
                     <div>
                       <span className="text-[11px] font-medium text-slate-400">
-                        {item.category}
+                        {item.kategoria}
                       </span>
                       <h3 className="text-base font-bold text-white mt-0.5">
-                        {item.name}
+                        {item.nazwa}
                       </h3>
                     </div>
 
@@ -441,9 +430,9 @@ export default function EquipmentPage() {
                     </div>
                   </div>
 
-                  {item.notes && (
+                  {item.notatki && (
                     <p className="text-xs text-slate-400 bg-slate-950 p-2.5 rounded-xl border border-slate-800/80">
-                      {item.notes}
+                      {item.notatki}
                     </p>
                   )}
                 </div>
@@ -468,7 +457,7 @@ export default function EquipmentPage() {
                       ) : (
                         <XCircle className="w-3.5 h-3.5" />
                       )}
-                      {item.status.toUpperCase()}
+                      {item.status_opis.toUpperCase()}
                     </span>
                   </div>
 
@@ -476,7 +465,7 @@ export default function EquipmentPage() {
                     <button
                       onClick={() => handleQuickStatusChange(item, 'gotowy')}
                       className={`py-1.5 rounded-lg font-medium transition ${
-                        item.status === 'gotowy'
+                        item.status_opis === 'gotowy'
                           ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
                           : 'text-slate-400 hover:text-white'
                       }`}
@@ -486,7 +475,7 @@ export default function EquipmentPage() {
                     <button
                       onClick={() => handleQuickStatusChange(item, 'w naprawie')}
                       className={`py-1.5 rounded-lg font-medium transition ${
-                        item.status === 'w naprawie'
+                        item.status_opis === 'w naprawie'
                           ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
                           : 'text-slate-400 hover:text-white'
                       }`}
@@ -496,7 +485,7 @@ export default function EquipmentPage() {
                     <button
                       onClick={() => handleQuickStatusChange(item, 'niedostępny')}
                       className={`py-1.5 rounded-lg font-medium transition ${
-                        item.status === 'niedostępny'
+                        item.status_opis === 'niedostępny'
                           ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
                           : 'text-slate-400 hover:text-white'
                       }`}
@@ -537,8 +526,8 @@ export default function EquipmentPage() {
                 <input
                   type="text"
                   required
-                  value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  value={formData.nazwa}
+                  onChange={(e) => setFormData({ ...formData, nazwa: e.target.value })}
                   placeholder="np. Piekarnik parowy, Blender kielichowy, Patelnia żeliwna"
                   className="w-full px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-800 text-sm text-white focus:border-emerald-500 focus:outline-none"
                 />
@@ -548,9 +537,9 @@ export default function EquipmentPage() {
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-slate-400">Kategoria</label>
                   <select
-                    value={formData.category}
+                    value={formData.kategoria}
                     onChange={(e) =>
-                      setFormData({ ...formData, category: e.target.value })
+                      setFormData({ ...formData, kategoria: e.target.value })
                     }
                     className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-sm text-white focus:border-emerald-500 focus:outline-none"
                   >
@@ -565,11 +554,11 @@ export default function EquipmentPage() {
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-slate-400">Stan sprzętu</label>
                   <select
-                    value={formData.status}
+                    value={formData.status_opis}
                     onChange={(e) =>
                       setFormData({
                         ...formData,
-                        status: e.target.value as EquipmentStatus
+                        status_opis: e.target.value as EquipmentStatus
                       })
                     }
                     className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-sm text-white focus:border-emerald-500 focus:outline-none"
@@ -587,8 +576,8 @@ export default function EquipmentPage() {
                 </label>
                 <textarea
                   rows={2}
-                  value={formData.notes}
-                  onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+                  value={formData.notatki}
+                  onChange={(e) => setFormData({ ...formData, notatki: e.target.value })}
                   placeholder="np. Wymaga wymiany uszczelki, pojemność 2.5L..."
                   className="w-full px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-800 text-sm text-white focus:border-emerald-500 focus:outline-none resize-none"
                 />

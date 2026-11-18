@@ -4,21 +4,24 @@ const { httpError, orNotFound } = require('../utils/http');
 
 const NOT_FOUND = 'Nie znaleziono sprzętu.';
 
-// sprawny decyduje o dopasowaniu przepisów; status_opis podaje powód niedostępności.
+// sprawny decyduje o dopasowaniu przepisów, więc status_opis nie może mu przeczyć.
 const present = (row) => ({
     ...row,
-    status: row.sprawny
+    status_opis: row.sprawny
         ? 'gotowy'
         : (row.status_opis && row.status_opis !== 'gotowy' ? row.status_opis : 'niedostępny')
 });
 
-const parseStatus = (status) => {
-    if (!EQUIPMENT_STATUSES.includes(status)) throw httpError(400, 'Niepoprawny status sprzętu.');
-    return { sprawny: status === 'gotowy', status_opis: status };
+const parseStatus = (statusOpis) => {
+    if (!EQUIPMENT_STATUSES.includes(statusOpis)) {
+        throw httpError(400, 'Niepoprawny status sprzętu.');
+    }
+
+    return { sprawny: statusOpis === 'gotowy', status_opis: statusOpis };
 };
 
 const validate = (body) => {
-    const { nazwa, kategoria = 'AGD małe', notatki = '', status = 'gotowy' } = body || {};
+    const { nazwa, kategoria = 'AGD małe', notatki = '', status_opis: statusOpis = 'gotowy' } = body || {};
 
     if (typeof nazwa !== 'string' || !nazwa.trim() || nazwa.trim().length > 1000) {
         throw httpError(400, 'Nazwa sprzętu jest wymagana.');
@@ -32,7 +35,7 @@ const validate = (body) => {
         nazwa: nazwa.trim(),
         kategoria: kategoria.trim(),
         notatki,
-        ...parseStatus(status)
+        ...parseStatus(statusOpis)
     };
 };
 
@@ -44,7 +47,7 @@ const update = async (id, body) =>
     present(orNotFound(await equipmentRepository.update(id, validate(body)), NOT_FOUND));
 
 const updateStatus = async (id, body) => {
-    const { sprawny, status_opis: statusOpis } = parseStatus(body?.status);
+    const { sprawny, status_opis: statusOpis } = parseStatus(body?.status_opis);
     return present(orNotFound(await equipmentRepository.updateStatus(id, sprawny, statusOpis), NOT_FOUND));
 };
 

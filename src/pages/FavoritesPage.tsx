@@ -22,7 +22,7 @@ import {
 // KONFIGURACJA WARSTWY KOMUNIKACJI HTTP/JSON
 // ==========================================
 import { apiFetch, ApiError } from '../api';
-import { fromApiRecipe, type ApiRecipe, type Recipe as FavoriteRecipe } from '../mappers';
+import { toPrzepis, type Przepis as FavoriteRecipe, type PrzepisApi } from '../model';
 
 export default function FavoritesPage() {
   // Stany danych pobieranych z bazy danych (MySQL / PostgreSQL)
@@ -46,8 +46,8 @@ export default function FavoritesPage() {
     setErrorMessage(null);
 
     try {
-      const data = await apiFetch<ApiRecipe[]>('/przepisy?ulubione=true');
-      setFavorites(data.map(fromApiRecipe));
+      const data = await apiFetch<PrzepisApi[]>('/przepisy?ulubione=true');
+      setFavorites(data.map(toPrzepis));
       setDbConnected(true);
     } catch (err: unknown) {
       setDbConnected(false);
@@ -86,7 +86,7 @@ export default function FavoritesPage() {
   // Otwieranie szczegółów przepisu z domyślną liczbą porcji
   const openRecipeDetails = (recipe: FavoriteRecipe) => {
     setActiveRecipe(recipe);
-    setScaledServings(recipe.servings || 2);
+    setScaledServings(recipe.porcja || 2);
   };
 
   // Automatyczne usuwanie składników ze spiżarni po wykonaniu przepisu
@@ -115,12 +115,12 @@ export default function FavoritesPage() {
     return favorites.filter((recipe) => {
       if (
         searchQuery.trim() &&
-        !recipe.title.toLowerCase().includes(searchQuery.toLowerCase())
+        !recipe.nazwa.toLowerCase().includes(searchQuery.toLowerCase())
       ) {
         return false;
       }
 
-      const missing = recipe.missingPercentage ?? 0;
+      const missing = recipe.procent_brakow ?? 0;
       if (matchFilter === '100' && missing !== 0) return false;
       if (matchFilter === '75' && (missing === 0 || missing > 25)) return false;
 
@@ -256,7 +256,7 @@ export default function FavoritesPage() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
           {filteredFavorites.map((recipe) => {
-            const missing = recipe.missingPercentage ?? 0;
+            const missing = recipe.procent_brakow ?? 0;
             const isFullMatch = missing === 0;
             const isPartialMatch = missing > 0 && missing <= 25;
 
@@ -295,19 +295,19 @@ export default function FavoritesPage() {
                   {/* Tytuł i opis */}
                   <div>
                     <h3 className="text-base font-bold text-white group-hover:text-emerald-400 transition">
-                      {recipe.title}
+                      {recipe.nazwa}
                     </h3>
-                    {recipe.description && (
+                    {recipe.opis_krotki && (
                       <p className="text-xs text-slate-400 mt-1 line-clamp-2">
-                        {recipe.description}
+                        {recipe.opis_krotki}
                       </p>
                     )}
                   </div>
 
                   {/* Tagi dietetyczne */}
-                  {recipe.dietTags && recipe.dietTags.length > 0 && (
+                  {recipe.diety && recipe.diety.length > 0 && (
                     <div className="flex flex-wrap gap-1.5">
-                      {recipe.dietTags.map((tag, idx) => (
+                      {recipe.diety.map((tag, idx) => (
                         <span
                           key={idx}
                           className="text-[10px] px-2 py-0.5 rounded-md bg-slate-950 text-slate-300 border border-slate-800"
@@ -320,15 +320,15 @@ export default function FavoritesPage() {
 
                   {/* Wizualizacja brakujących produktów (gdy brakuje <= 25%) */}
                   {isPartialMatch &&
-                    recipe.missingIngredients &&
-                    recipe.missingIngredients.length > 0 && (
+                    recipe.brakujace &&
+                    recipe.brakujace.length > 0 && (
                       <div className="p-3 rounded-xl bg-amber-500/5 border border-amber-500/20 space-y-1.5">
                         <p className="text-[11px] font-medium text-amber-300 flex items-center gap-1.5">
                           <AlertTriangle className="w-3.5 h-3.5" />
                           Brakujące produkty (≤ 25%):
                         </p>
                         <div className="flex flex-wrap gap-1">
-                          {recipe.missingIngredients.map((item, idx) => (
+                          {recipe.brakujace.map((item, idx) => (
                             <span
                               key={idx}
                               className="text-[11px] px-2 py-0.5 rounded bg-amber-500/15 text-amber-200"
@@ -345,15 +345,15 @@ export default function FavoritesPage() {
                 <div className="pt-3 border-t border-slate-800/80 flex items-center justify-between text-xs text-slate-400">
                   <span className="flex items-center gap-1">
                     <Clock className="w-3.5 h-3.5 text-sky-400" />
-                    {recipe.prepTime} min
+                    {recipe.czas} min
                   </span>
                   <span className="flex items-center gap-1">
                     <Users className="w-3.5 h-3.5 text-purple-400" />
-                    {recipe.servings} porcje
+                    {recipe.porcja} porcje
                   </span>
                   <span className="flex items-center gap-1">
                     <Flame className="w-3.5 h-3.5 text-orange-400" />
-                    {recipe.kcalPerServing ? `${recipe.kcalPerServing} kcal` : '— kcal'}
+                    {recipe.kalorycznosc ? `${recipe.kalorycznosc} kcal` : '— kcal'}
                   </span>
                 </div>
               </div>
@@ -370,9 +370,9 @@ export default function FavoritesPage() {
           <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto shadow-2xl p-6 space-y-6">
             <div className="flex items-start justify-between gap-4 border-b border-slate-800 pb-4">
               <div>
-                <h3 className="text-xl font-bold text-white">{activeRecipe.title}</h3>
-                {activeRecipe.description && (
-                  <p className="text-sm text-slate-400 mt-1">{activeRecipe.description}</p>
+                <h3 className="text-xl font-bold text-white">{activeRecipe.nazwa}</h3>
+                {activeRecipe.opis_krotki && (
+                  <p className="text-sm text-slate-400 mt-1">{activeRecipe.opis_krotki}</p>
                 )}
               </div>
               <button
@@ -417,8 +417,8 @@ export default function FavoritesPage() {
                 <div className="text-right">
                   <p className="text-xs text-slate-400">Kaloryczność całkowita</p>
                   <p className="text-sm font-bold text-orange-400">
-                    {activeRecipe.kcalPerServing
-                      ? `${activeRecipe.kcalPerServing * scaledServings} kcal (${activeRecipe.kcalPerServing} kcal/porcja)`
+                    {activeRecipe.kalorycznosc
+                      ? `${activeRecipe.kalorycznosc * scaledServings} kcal (${activeRecipe.kalorycznosc} kcal/porcja)`
                       : 'Brak danych kcal'}
                   </p>
                 </div>
@@ -432,32 +432,32 @@ export default function FavoritesPage() {
                   Wymagane składniki ({scaledServings} porcji)
                 </h4>
                 <ul className="space-y-2">
-                  {activeRecipe.ingredients.map((ing, idx) => {
-                    const scale = scaledServings / (activeRecipe.servings || 1);
-                    const scaledAmount = Math.round(ing.amount * scale * 10) / 10;
+                  {activeRecipe.skladniki.map((ing, idx) => {
+                    const scale = scaledServings / (activeRecipe.porcja || 1);
+                    const scaledAmount = Math.round(ing.qty * scale * 10) / 10;
                     return (
                       <li
                         key={idx}
                         className="p-3 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-between text-sm"
                       >
-                        <span className="text-slate-200">{ing.name}</span>
+                        <span className="text-slate-200">{ing.nazwa}</span>
                         <span className="font-semibold text-emerald-400">
-                          {scaledAmount} {ing.unit}
+                          {scaledAmount} {ing.unit_meas}
                         </span>
                       </li>
                     );
                   })}
                 </ul>
 
-                {activeRecipe.requiredEquipment &&
-                  activeRecipe.requiredEquipment.length > 0 && (
+                {activeRecipe.sprzet_nazwy &&
+                  activeRecipe.sprzet_nazwy.length > 0 && (
                     <div className="pt-3">
                       <h5 className="text-xs font-medium text-slate-400 mb-2 flex items-center gap-1.5">
                         <Wrench className="w-3.5 h-3.5 text-purple-400" />
                         Wymagane wyposażenie kuchni:
                       </h5>
                       <div className="flex flex-wrap gap-1.5">
-                        {activeRecipe.requiredEquipment.map((eq, idx) => (
+                        {activeRecipe.sprzet_nazwy.map((eq, idx) => (
                           <span
                             key={idx}
                             className="text-xs px-2.5 py-1 rounded-lg bg-slate-950 border border-slate-800 text-slate-300"
@@ -475,7 +475,7 @@ export default function FavoritesPage() {
                   Instrukcja przygotowania
                 </h4>
                 <ol className="space-y-3">
-                  {activeRecipe.instructions.map((step, idx) => (
+                  {activeRecipe.kroki.map((step, idx) => (
                     <li
                       key={idx}
                       className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 text-sm text-slate-300 flex gap-3"
