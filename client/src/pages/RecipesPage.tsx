@@ -29,7 +29,18 @@ import RecipeFormModal from '../components/RecipeFormModal';
 import { AVAILABLE_ALLERGENS, AVAILABLE_DIETS } from '../constants';
 import { toPrzepis, type Przepis as Recipe, type PrzepisApi } from '../model';
 
+// Widok listy: przepisy dopasowane do spiżarni i sprzętu albo cała baza przepisów
+type RecipeView = 'dopasowane' | 'wszystkie';
+
+// Najpierw przepisy z najmniejszymi brakami, przy remisie alfabetycznie
+const byMatch = (a: Recipe, b: Recipe) =>
+  (a.procent_brakow ?? 0) - (b.procent_brakow ?? 0) || a.nazwa.localeCompare(b.nazwa, 'pl');
+
 export default function RecipesPage() {
+  // Adres /przepisy/:id otwiera szczegóły dowolnego przepisu, więc startuje z pełną listą
+  const { id: routeRecipeId } = useParams();
+  const [view, setView] = useState<RecipeView>(routeRecipeId ? 'wszystkie' : 'dopasowane');
+
   // Stany danych pobieranych z bazy danych (MySQL / PostgreSQL)
   const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -59,8 +70,9 @@ export default function RecipesPage() {
     setErrorMessage(null);
 
     try {
-      const data = await apiFetch<PrzepisApi[]>('/przepisy');
-      setRecipes(data.map(toPrzepis));
+      const path = view === 'dopasowane' ? '/przepisy/dopasowane' : '/przepisy';
+      const data = await apiFetch<PrzepisApi[]>(path);
+      setRecipes(data.map(toPrzepis).sort(byMatch));
       setDbConnected(true);
     } catch (err: unknown) {
       setDbConnected(false);
@@ -71,21 +83,22 @@ export default function RecipesPage() {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [view]);
 
   useEffect(() => {
     loadRecipes();
+  }, [loadRecipes]);
 
-    // Obsługa parametru URL ?akcja=nowy (np. po kliknięciu z HomePage)
+  // Obsługa parametru URL ?akcja=nowy (np. po kliknięciu z HomePage)
+  useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get('akcja') === 'nowy') {
       setFormInitial(null);
       setIsFormOpen(true);
     }
-  }, [loadRecipes]);
+  }, []);
 
   // Adres /przepisy/:id otwiera szczegóły przepisu raz, po wczytaniu listy
-  const { id: routeRecipeId } = useParams();
   const openedRouteId = useRef<string | null>(null);
 
   useEffect(() => {
@@ -296,6 +309,33 @@ export default function RecipesPage() {
 
       {/* Panel wyszukiwania i zaawansowanych filtrów */}
       <section className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-5">
+        {/* Przełącznik: dopasowane do spiżarni / wszystkie przepisy */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div role="tablist" className="inline-flex rounded-xl bg-slate-950 p-1 border border-slate-800 text-sm self-start">
+            {([
+              ['dopasowane', 'Dopasowane do spiżarni'],
+              ['wszystkie', 'Wszystkie przepisy']
+            ] as const).map(([value, label]) => (
+              <button
+                key={value}
+                role="tab"
+                aria-selected={view === value}
+                onClick={() => setView(value)}
+                className={`px-4 py-2 rounded-lg font-medium whitespace-nowrap transition ${
+                  view === value ? 'bg-emerald-500/20 text-emerald-300' : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <p className="text-xs text-slate-500">
+            {view === 'dopasowane'
+              ? 'Przepisy z brakami do 25% składników i sprawnym sprzętem, od najlepiej dopasowanych.'
+              : 'Cała baza przepisów, od najlepiej dopasowanych do spiżarni.'}
+          </p>
+        </div>
+
         <div className="flex flex-col lg:flex-row gap-4">
           {/* Wyszukiwarka tekstowa */}
           <div className="relative flex-1">
@@ -412,29 +452,49 @@ export default function RecipesPage() {
         </div>
       </section>
 
-      {/* Lista przepisów lub pusty stan */}
-      {filteredRecipes.length === 0 ? (
+      {/* Lista przepisów lub pusty stan (przy błędzie API wystarcza komunikat powyżej) */}
+      {!dbConnected && errorMessage ? null : isLoading && recipes.length === 0 ? (
+        <p className="py-16 text-center text-sm text-slate-500">Wczytywanie przepisów…</p>
+      ) : filteredRecipes.length === 0 ? (
         <div className="py-16 px-4 text-center rounded-2xl bg-slate-900/50 border border-dashed border-slate-800 space-y-3">
           <Utensils className="w-10 h-10 text-slate-600 mx-auto" />
           <div className="space-y-1">
             <h3 className="text-base font-semibold text-slate-300">
-              Brak przepisów spełniających kryteria
+              {recipes.length > 0
+                ? 'Brak przepisów spełniających kryteria'
+                : view === 'dopasowane'
+                ? 'Brak przepisów dopasowanych do Twojej spiżarni'
+                : 'Baza przepisów jest pusta'}
             </h3>
             <p className="text-xs text-slate-500 max-w-md mx-auto">
-              {dbConnected
-                ? 'Zmień filtry wyszukiwania lub dodaj nowy przepis do bazy danych.'
-                : 'Po uruchomieniu serwera Node.js i bazy danych zobaczysz tutaj listę przepisów dopasowanych do Twojej spiżarni.'}
+              {recipes.length > 0
+                ? 'Zmień filtry wyszukiwania.'
+                : view === 'dopasowane'
+                ? 'Do żadnego przepisu nie brakuje mniej niż 25% składników albo potrzebny sprzęt jest w naprawie. Dodaj produkty do spiżarni lub przejrzyj wszystkie przepisy.'
+                : 'Dodaj pierwszy przepis, aby aplikacja mogła dopasować go do spiżarni.'}
             </p>
           </div>
-          <div className="pt-2">
-            <button
-              onClick={() => openFormModal()}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 text-xs font-medium transition"
-            >
-              <Plus className="w-4 h-4" />
-              Utwórz pierwszy przepis
-            </button>
-          </div>
+          {recipes.length === 0 && (
+            <div className="pt-2">
+              {view === 'dopasowane' ? (
+                <button
+                  onClick={() => setView('wszystkie')}
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 text-xs font-medium transition"
+                >
+                  <Utensils className="w-4 h-4" />
+                  Pokaż wszystkie przepisy
+                </button>
+              ) : (
+                <button
+                  onClick={() => openFormModal()}
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 text-xs font-medium transition"
+                >
+                  <Plus className="w-4 h-4" />
+                  Utwórz pierwszy przepis
+                </button>
+              )}
+            </div>
+          )}
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
@@ -462,7 +522,7 @@ export default function RecipesPage() {
                       }`}
                     >
                       {isFullMatch
-                        ? '100% składników'
+                        ? 'Masz wszystko'
                         : `Brakuje ${missing}% składników`}
                     </span>
 
