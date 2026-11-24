@@ -24,6 +24,8 @@ Jedna usługa działająca cały miesiąc mieści się w 750 godzinach. Przed pr
 
 ## Konfiguracja
 
+Ustawienia są w plikach `render.yaml` i `netlify.toml`. W panelach trzeba wpisać tylko wartości oznaczone poniżej jako hasło lub adres.
+
 ### Render
 
 - Root Directory: `server`
@@ -49,7 +51,7 @@ Używamy Session poolera Supabase, bo bezpośrednie połączenie z bazą domyśl
 - Build command: `npm run build`
 - Publish directory: `dist`
 - Zmienna `VITE_API_URL`: adres usługi z Rendera z końcówką `/api`
-- Przekierowanie dla adresów aplikacji (np. `/przepisy/5`): plik `client/public/_redirects` z wierszem `/* /index.html 200`
+- Przekierowanie adresów aplikacji, np. `/przepisy/5`, jest w `netlify.toml`
 
 ## Źródła
 
