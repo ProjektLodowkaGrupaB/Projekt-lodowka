@@ -41,3 +41,5 @@ const cook = async (req, res) => {
 };
 
 module.exports = { getAll, getMatching, getById, create, update, remove, setFavorite, cook };
+
+/** */

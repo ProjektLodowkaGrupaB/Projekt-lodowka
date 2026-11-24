@@ -88,7 +88,7 @@ const describeRecipe = (recipe, stock, equipment, today = localDate()) => {
     };
 };
 
-// Plan odjęcia składników: albo starcza wszystkiego, albo lista braków i zero zmian.
+// Plan odjęcia składników:  albo starcza wszystkiego, albo lista braków i zero zmian.
 const planConsumption = (recipe, stock, porcje, today = localDate()) => {
     const scale = porcje / (recipe.porcja || 1);
     const remaining = new Map(stock.map((product) => [product.id, Number(product.qty)]));
